@@ -1,10 +1,14 @@
-# Cloudflare Pages Configuration
+# Cloudflare Workers Configuration for OpenNext
 # Account ID is loaded from CLOUDFLARE_ACCOUNT_ID environment variable / GitHub Secret
 
 name = "socks5proxies"
+main = ".open-next/worker.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".open-next"
+
+# Assets for static files
+[assets]
+directory = ".open-next/assets"
 
 [vars]
 NEXT_PUBLIC_API_URL = "https://api.socks5proxies.com"

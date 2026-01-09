@@ -45,3 +45,4 @@ apps/server/*.db-wal
 # Documentation (private)
 CLAUDE.md
 package-lock.json
+.open-next
