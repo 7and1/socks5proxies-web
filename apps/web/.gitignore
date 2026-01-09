@@ -38,7 +38,6 @@ apps/server/*.db-wal
 .vscode/
 
 # Cloudflare
-wrangler.toml
 .wrangler/
 .dev.vars
 .vercel/
