@@ -1,0 +1,169 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: socks5proxies-web
+    ports:
+      - "127.0.0.1:8004:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://api.socks5proxies.com
+      - NEXT_PUBLIC_WS_URL=wss://api.socks5proxies.com/ws
+      - NEXT_PUBLIC_SITE_URL=https://socks5proxies.com
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy-tier
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile
+    container_name: socks5proxies-api
+    ports:
+      - "127.0.0.1:8003:8080"
+    environment:
+      - PORT=8080
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD environment variable is required}
+      - REDIS_DB=2
+      - DB_PATH=/data/socksproxies.db
+      - JUDGE_URL=${JUDGE_URL:-https://api.ipify.org?format=text}
+      - GEOIP_DB=/data/GeoLite2-Country.mmdb
+      - GEOIP_CITY_DB=/data/GeoLite2-City.mmdb
+      - GEOIP_ASN_DB=/data/GeoLite2-ASN.mmdb
+      - PROXY_LIST_PATH=/data/proxies.txt
+      - PROXY_SOURCE_URL=${PROXY_SOURCE_URL:-}
+      - PROXY_SYNC_INTERVAL=${PROXY_SYNC_INTERVAL:-5m}
+      - PROXY_API_CACHE_TTL=${PROXY_API_CACHE_TTL:-300}
+      - PROXY_WEB_CACHE_TTL=${PROXY_WEB_CACHE_TTL:-3600}
+      - API_KEYS=${API_KEYS:-}
+      - API_RATE_LIMIT_HOUR=${API_RATE_LIMIT_HOUR:-1000}
+      - API_RATE_LIMIT_WINDOW=${API_RATE_LIMIT_WINDOW:-1h}
+      - API_RATE_LIMIT_LIGHT=${API_RATE_LIMIT_LIGHT:-3000}
+      - API_RATE_LIMIT_STANDARD=${API_RATE_LIMIT_STANDARD:-1200}
+      - API_RATE_LIMIT_HEAVY=${API_RATE_LIMIT_HEAVY:-300}
+      - MAX_CONCURRENT=${MAX_CONCURRENT:-100}
+      - MAX_WEBSOCKET_CONNECTIONS=${MAX_WEBSOCKET_CONNECTIONS:-50}
+      - RATE_LIMIT_FREE=${RATE_LIMIT_FREE:-100}
+      - RATE_LIMIT_BASIC=${RATE_LIMIT_BASIC:-1000}
+      - RATE_LIMIT_PRO=${RATE_LIMIT_PRO:-10000}
+      - ALLOWED_ORIGINS=https://socks5proxies.com,https://www.socks5proxies.com,https://api.socks5proxies.com
+      - TRUSTED_PROXIES=127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8
+      - ENVIRONMENT=production
+      - GIN_MODE=release
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      - OTEL_EXPORTER_OTLP_INSECURE=${OTEL_EXPORTER_OTLP_INSECURE:-true}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-socks5proxies-api}
+      - SLOW_REQUEST_THRESHOLD=${SLOW_REQUEST_THRESHOLD:-2s}
+      - WAF_ENABLED=${WAF_ENABLED:-true}
+    volumes:
+      - ./data/api:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy-tier
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://localhost:8080/api/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7.2.4-alpine
+    container_name: socks5proxies-redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD environment variable is required}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --loglevel warning
+      --tcp-backlog 511
+      --tcp-keepalive 300
+      --timeout 0
+      --activerehashing yes
+      --lazyfree-lazy-eviction yes
+      --lazyfree-lazy-expire yes
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal:
+    driver: bridge
+  proxy-tier:
+    external: true
+    name: nginx-proxy_default

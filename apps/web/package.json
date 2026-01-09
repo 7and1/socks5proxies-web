@@ -1,0 +1,37 @@
+{
+  "name": "socksproxies-web",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:cloudflare": "npx @opennextjs/cloudflare build",
+    "preview": "wrangler dev",
+    "deploy": "wrangler pages deploy",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "0.427.0",
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "1.14.8",
+    "@types/node": "20.14.11",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "10.4.20",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.5",
+    "postcss": "8.4.40",
+    "tailwindcss": "3.4.7",
+    "typescript": "5.5.4",
+    "vitest": "2.0.5",
+    "wrangler": "4.58.0"
+  }
+}

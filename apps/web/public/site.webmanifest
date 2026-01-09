@@ -1,0 +1,29 @@
+{
+  "name": "Socks5Proxies.com",
+  "short_name": "Socks5Proxies",
+  "description": "Free SOCKS5 proxy checker and IP anonymity testing tools",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdf7f0",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "lang": "en"
+}

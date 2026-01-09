@@ -1,0 +1,14 @@
+# Cloudflare Pages Configuration Template
+# Copy this file to wrangler.toml and fill in your values
+# IMPORTANT: Never commit wrangler.toml to version control
+
+name = "socks5proxies"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# Account ID - Use environment variable CLOUDFLARE_ACCOUNT_ID instead
+# account_id = "your-account-id-here"
+
+[vars]
+NEXT_PUBLIC_API_URL = "https://api.socks5proxies.com"
