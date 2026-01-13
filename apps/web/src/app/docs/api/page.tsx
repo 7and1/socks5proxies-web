@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { Terminal, Zap, Shield } from "lucide-react";
-import { proxyGrid } from "../../../config/proxy-grid";
+import { Zap, Shield } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Proxy Checker API Documentation - REST & WebSocket Endpoints",
   description:
-    "REST API for bulk proxy checking, IP anonymity scoring, and format conversion. Includes WebSocket streaming plus Proxy Grid API for SERP, web2md, screenshots, and social lookups.",
+    "REST API for bulk proxy checking, IP anonymity scoring, and format conversion. Includes WebSocket streaming.",
   keywords: [
     "proxy api",
     "proxy checker api",
@@ -13,10 +12,6 @@ export const metadata: Metadata = {
     "rest api proxy",
     "websocket proxy api",
     "proxy testing api",
-    "proxy grid api",
-    "serp api",
-    "web2md api",
-    "screenshot api",
   ],
   alternates: {
     canonical: "https://socks5proxies.com/docs/api",
@@ -24,7 +19,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Proxy Checker API Documentation",
     description:
-      "REST API for proxy checking with WebSocket streaming plus Proxy Grid API for SERP and web content extraction.",
+      "REST API for proxy checking with WebSocket streaming and proxy list access.",
     url: "https://socks5proxies.com/docs/api",
     type: "website",
   },
@@ -213,21 +208,6 @@ results = response.json()`,
 const results = await response.json();`,
 };
 
-const proxyGridExamples = {
-  search: `curl -X POST ${proxyGrid.baseUrl}/api/search \\
-  -H "${proxyGrid.authHeader}: YOUR_GRID_SECRET" \\
-  -d '{"type":"google","query":"best espresso machine"}'`,
-  web2md: `curl -X POST ${proxyGrid.baseUrl}/api/search \\
-  -H "${proxyGrid.authHeader}: YOUR_GRID_SECRET" \\
-  -d '{"type":"web2md","url":"https://example.com"}'`,
-  screenshot: `curl -X POST ${proxyGrid.baseUrl}/api/search \\
-  -H "${proxyGrid.authHeader}: YOUR_GRID_SECRET" \\
-  -d '{"type":"screenshot","url":"https://example.com"}'`,
-  grid: `curl -X POST ${proxyGrid.baseUrl}/api/grid \\
-  -H "${proxyGrid.authHeader}: YOUR_GRID_SECRET" \\
-  -d '{"target":"https://httpbin.org/ip","force":true}'`,
-};
-
 function CodeBlock({
   children,
   language,
@@ -294,126 +274,6 @@ export default function ApiDocsPage() {
           </p>
         </div>
       </section>
-
-      <section className="rounded-3xl border border-sand-200 bg-white/80 p-6">
-        <div className="flex items-center gap-3">
-          <Terminal className="h-8 w-8 text-sand-600" />
-          <div>
-            <h2 className="text-lg font-semibold">Proxy Grid API</h2>
-            <p className="text-sm text-ink-muted">
-              SERP, web content, and social data via a single endpoint.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-sand-200 bg-sand-50 p-4 text-sm text-ink-muted">
-            <p className="text-xs font-semibold uppercase tracking-widest text-ink">
-              Base URL
-            </p>
-            <code className="mt-2 block font-mono text-ink">
-              {proxyGrid.baseUrl}
-            </code>
-            <p className="mt-3 text-xs text-ink-muted">
-              Authenticate with{" "}
-              <code className="font-mono">{proxyGrid.authHeader}</code> header.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-sand-200 bg-sand-50 p-4 text-sm text-ink-muted">
-            <p className="text-xs font-semibold uppercase tracking-widest text-ink">
-              Highlights
-            </p>
-            <ul className="mt-3 space-y-2 text-sm">
-              {proxyGrid.highlights.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-ocean-500" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-xl font-semibold">Proxy Grid /api/search Types</h2>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-sand-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-sand-50 text-xs uppercase tracking-widest text-ink-muted">
-              <tr>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Input</th>
-                <th className="px-4 py-3">Example</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-sand-200">
-              {proxyGrid.searchTypes.map((item) => (
-                <tr key={item.type} className="text-ink">
-                  <td className="px-4 py-3 font-mono text-xs">{item.type}</td>
-                  <td className="px-4 py-3">{item.input}</td>
-                  <td className="px-4 py-3 text-ink-muted">{item.example}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-3xl border border-sand-200 bg-white/80 p-6">
-          <h3 className="text-lg font-semibold">Cache TTL</h3>
-          <p className="mt-2 text-sm text-ink-muted">
-            Cached responses by type. Use{" "}
-            <code className="font-mono">{'{"force": true}'}</code> to bypass.
-          </p>
-          <div className="mt-4 overflow-hidden rounded-2xl border border-sand-200 bg-white">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-sand-50 text-xs uppercase tracking-widest text-ink-muted">
-                <tr>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">TTL</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-sand-200">
-                {proxyGrid.cacheTtl.map((item) => (
-                  <tr key={item.type} className="text-ink">
-                    <td className="px-4 py-3 font-mono text-xs">{item.type}</td>
-                    <td className="px-4 py-3 text-ink-muted">{item.ttl}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="rounded-3xl border border-sand-200 bg-white/80 p-6">
-          <h3 className="text-lg font-semibold">Difficulty & Speed</h3>
-          <p className="mt-2 text-sm text-ink-muted">
-            Operational expectations by source and layer.
-          </p>
-          <div className="mt-4 overflow-hidden rounded-2xl border border-sand-200 bg-white">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-sand-50 text-xs uppercase tracking-widest text-ink-muted">
-                <tr>
-                  <th className="px-4 py-3">Service</th>
-                  <th className="px-4 py-3">Layer</th>
-                  <th className="px-4 py-3">Speed</th>
-                  <th className="px-4 py-3">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-sand-200">
-                {proxyGrid.difficultySpeed.map((item) => (
-                  <tr key={item.service} className="text-ink">
-                    <td className="px-4 py-3">{item.service}</td>
-                    <td className="px-4 py-3 text-ink-muted">{item.layer}</td>
-                    <td className="px-4 py-3 text-ink-muted">{item.speed}</td>
-                    <td className="px-4 py-3 text-ink-muted">{item.cost}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
       <section>
         <h2 className="text-xl font-semibold">Endpoints</h2>
         <div className="mt-4 space-y-3">
@@ -486,24 +346,6 @@ export default function ApiDocsPage() {
         <h2 className="text-xl font-semibold">Code Examples</h2>
 
         <div className="mt-4 space-y-6">
-          <div>
-            <h3 className="font-semibold">Proxy Grid Search</h3>
-            <CodeBlock language="bash">{proxyGridExamples.search}</CodeBlock>
-          </div>
-          <div>
-            <h3 className="font-semibold">Proxy Grid Web2MD</h3>
-            <CodeBlock language="bash">{proxyGridExamples.web2md}</CodeBlock>
-          </div>
-          <div>
-            <h3 className="font-semibold">Proxy Grid Screenshot</h3>
-            <CodeBlock language="bash">
-              {proxyGridExamples.screenshot}
-            </CodeBlock>
-          </div>
-          <div>
-            <h3 className="font-semibold">Proxy Grid Raw Proxy</h3>
-            <CodeBlock language="bash">{proxyGridExamples.grid}</CodeBlock>
-          </div>
           <div>
             <h3 className="font-semibold">cURL</h3>
             <CodeBlock language="bash">{codeExamples.curl}</CodeBlock>
