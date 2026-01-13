@@ -170,7 +170,7 @@ function ProxyListContentComponent({
     : "";
 
   return (
-    <section className="space-y-8">
+    <section className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
       <div className="rounded-3xl border border-sand-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-sand-700 dark:bg-sand-900/70">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
