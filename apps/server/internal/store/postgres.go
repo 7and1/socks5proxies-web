@@ -4,11 +4,60 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"runtime"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const (
+	// Default connection pool settings
+	defaultMaxConnLifetime   = 2 * time.Hour
+	defaultMaxConnIdleTime   = 5 * time.Minute
+	defaultHealthCheckPeriod = 30 * time.Second
+	defaultMinConns          = 2
+)
+
+// ConnectionPoolConfig holds dynamic pool configuration
+type ConnectionPoolConfig struct {
+	MaxConns           int32
+	MinConns           int32
+	MaxConnLifetime    time.Duration
+	MaxConnIdleTime    time.Duration
+	HealthCheckPeriod  time.Duration
+}
+
+// DefaultConnectionPoolConfig creates optimal pool config based on available CPU cores
+func DefaultConnectionPoolConfig() ConnectionPoolConfig {
+	cpuCount := runtime.NumCPU()
+	if cpuCount < 1 {
+		cpuCount = 1
+	}
+
+	// Formula: max_conns = min(cpu_cores * 4, 100)
+	// This allows for concurrent queries while preventing overwhelming the database
+	maxConns := int32(cpuCount * 4)
+	if maxConns > 100 {
+		maxConns = 100
+	}
+	if maxConns < 10 {
+		maxConns = 10
+	}
+
+	minConns := int32(cpuCount)
+	if minConns > defaultMinConns {
+		minConns = defaultMinConns
+	}
+
+	return ConnectionPoolConfig{
+		MaxConns:          maxConns,
+		MinConns:          minConns,
+		MaxConnLifetime:   defaultMaxConnLifetime,
+		MaxConnIdleTime:   defaultMaxConnIdleTime,
+		HealthCheckPeriod: defaultHealthCheckPeriod,
+	}
+}
 
 // schemaNamePattern validates schema names to prevent SQL injection
 var schemaNamePattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -47,6 +96,11 @@ type PostgresCheckRecord struct {
 
 // OpenPostgres creates a new PostgreSQL store with connection pooling
 func OpenPostgres(databaseURL, schema string) (*PostgresStore, error) {
+	return OpenPostgresWithConfig(databaseURL, schema, DefaultConnectionPoolConfig())
+}
+
+// OpenPostgresWithConfig creates a new PostgreSQL store with custom pool configuration
+func OpenPostgresWithConfig(databaseURL, schema string, poolConfig ConnectionPoolConfig) (*PostgresStore, error) {
 	// Validate schema name to prevent SQL injection
 	if !schemaNamePattern.MatchString(schema) {
 		return nil, fmt.Errorf("invalid schema name: %q - must contain only alphanumeric characters and underscores, and start with letter or underscore", schema)
@@ -57,19 +111,19 @@ func OpenPostgres(databaseURL, schema string) (*PostgresStore, error) {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 
-	// Connection pool settings
-	config.MaxConns = 25
-	config.MinConns = 5
-	config.MaxConnLifetime = 2 * time.Hour
-	config.MaxConnIdleTime = 5 * time.Minute
-	config.HealthCheckPeriod = 1 * time.Minute
+	// Apply optimized connection pool settings
+	config.MaxConns = poolConfig.MaxConns
+	config.MinConns = poolConfig.MinConns
+	config.MaxConnLifetime = poolConfig.MaxConnLifetime
+	config.MaxConnIdleTime = poolConfig.MaxConnIdleTime
+	config.HealthCheckPeriod = poolConfig.HealthCheckPeriod
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		return nil, fmt.Errorf("create connection pool: %w", err)
 	}
 
-	// Verify connection
+	// Verify connection with health check
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -82,6 +136,16 @@ func OpenPostgres(databaseURL, schema string) (*PostgresStore, error) {
 		DB:     pool,
 		schema: schema,
 	}, nil
+}
+
+// HealthCheck verifies the database connection is healthy
+func (s *PostgresStore) HealthCheck(ctx context.Context) error {
+	return s.DB.Ping(ctx)
+}
+
+// PoolStats returns connection pool statistics for monitoring
+func (s *PostgresStore) PoolStats() *pgxpool.Stat {
+	return s.DB.Stat()
 }
 
 // Schema returns the schema name for this store

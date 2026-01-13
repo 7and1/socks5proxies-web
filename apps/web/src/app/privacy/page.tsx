@@ -38,7 +38,7 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="mt-4 text-sm text-ink-muted dark:text-sand-400">
-            Last updated: January 2025
+            Last updated: January 2026
           </p>
 
           <div className="prose prose-sand mt-8 max-w-none dark:prose-invert">

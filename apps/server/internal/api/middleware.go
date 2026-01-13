@@ -20,6 +20,7 @@ import (
 
 const requestIDHeader = "X-Request-ID"
 const requestIDKey = "request_id"
+const requestIDMaxLen = 128
 
 type ErrorResponse struct {
 	Code      string `json:"code"`
@@ -65,7 +66,7 @@ func RespondError(c *gin.Context, statusCode int, code, message string, details 
 
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		requestID := c.GetHeader(requestIDHeader)
+		requestID := sanitizeRequestID(c.GetHeader(requestIDHeader))
 		if requestID == "" {
 			requestID = uuid.New().String()
 		}
@@ -73,6 +74,19 @@ func RequestIDMiddleware() gin.HandlerFunc {
 		c.Header(requestIDHeader, requestID)
 		c.Next()
 	}
+}
+
+func sanitizeRequestID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > requestIDMaxLen {
+		return ""
+	}
+	for _, r := range raw {
+		if r < 33 || r > 126 {
+			return ""
+		}
+	}
+	return raw
 }
 
 type PanicLog struct {

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { memo, useMemo, useState, useEffect, useCallback } from "react";
 import type { ProxyData } from "../../types/proxy";
-import { ProxyExportActions } from "./ProxyExportActions";
+import ProxyExportActions from "./ProxyExportActions";
 import { ProxyTable } from "./ProxyTable";
 
 interface ProxyListInteractiveProps {
@@ -11,7 +11,7 @@ interface ProxyListInteractiveProps {
   query?: Record<string, string | number | undefined>;
 }
 
-export function ProxyListInteractive({
+function ProxyListInteractive({
   data,
   basePath,
   query,
@@ -27,6 +27,10 @@ export function ProxyListInteractive({
     [data, selectedKeys],
   );
 
+  const handleClearSelection = useCallback(() => {
+    setSelectedKeys(new Set());
+  }, []);
+
   return (
     <div className="space-y-4">
       <ProxyExportActions
@@ -34,7 +38,7 @@ export function ProxyListInteractive({
         selected={selected}
         basePath={basePath}
         query={query}
-        onClearSelection={() => setSelectedKeys(new Set())}
+        onClearSelection={handleClearSelection}
       />
       <ProxyTable
         data={data}
@@ -44,3 +48,5 @@ export function ProxyListInteractive({
     </div>
   );
 }
+
+export default memo(ProxyListInteractive);

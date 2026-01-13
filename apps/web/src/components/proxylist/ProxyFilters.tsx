@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { COMMON_PORTS } from "../../config/proxy-constants";
 import type { FacetItem } from "../../types/proxy";
 
@@ -21,7 +22,7 @@ interface ProxyFiltersProps {
   lockPort?: boolean;
 }
 
-export function ProxyFilters({
+function ProxyFilters({
   countries,
   ports,
   protocols,
@@ -212,3 +213,5 @@ export function ProxyFilters({
     </form>
   );
 }
+
+export default memo(ProxyFilters);

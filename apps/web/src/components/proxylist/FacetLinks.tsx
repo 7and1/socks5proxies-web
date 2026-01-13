@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { memo } from "react";
 import type { FacetItem } from "../../types/proxy";
 
 interface FacetLinksProps {
@@ -18,7 +19,7 @@ function splitKey(key: string) {
   return { country: "", value: key };
 }
 
-export function FacetLinks({
+function FacetLinks({
   countries,
   ports,
   protocols,
@@ -184,3 +185,5 @@ export function FacetLinks({
     </div>
   );
 }
+
+export default memo(FacetLinks);

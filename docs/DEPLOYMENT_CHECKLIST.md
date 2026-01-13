@@ -33,6 +33,8 @@ ssh root@107.174.42.198 "ss -tlnp | grep -E '3000|8080|6379'"
 - [ ] Set `ALLOWED_ORIGINS` (default: `*` for public API)
 - [ ] Set `SENTRY_DSN` or `OTEL_EXPORTER_OTLP_ENDPOINT` for observability
 - [ ] Set `SLOW_REQUEST_THRESHOLD` (default: `2s`)
+- [ ] Set `EXPORT_DIR` (default: `./data/exports`, ensure writable inside container)
+- [ ] Set `EXPORT_JOB_TTL` (default: `2h`)
 
 ## Deployment Steps
 
@@ -47,12 +49,18 @@ rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.next' --exclude
 - [ ] Code synced to server
 - [ ] `.env.production` file exists on server
 - [ ] `data/` directory exists with proper permissions
+- [ ] `data/api/exports/` directory exists with proper permissions (mapped to `/data/exports`)
 
 ### 5. Nginx Configuration
 
 ```bash
-# Copy nginx config
+# Update Cloudflare IP list (if using Cloudflare)
+./deploy/nginx/update-cloudflare-ips.sh
+
+# Copy nginx configs
 scp deploy/nginx/socks5proxies.com.conf \
+  root@107.174.42.198:/opt/docker-projects/nginx-proxy/config/conf.d/
+scp deploy/nginx/cloudflare-ips.conf \
   root@107.174.42.198:/opt/docker-projects/nginx-proxy/config/conf.d/
 
 # Test nginx config
@@ -65,6 +73,7 @@ ssh root@107.174.42.198 "docker restart nginx-proxy"
 - [ ] Nginx config copied
 - [ ] Nginx config test passed
 - [ ] Nginx reloaded successfully
+- [ ] Cloudflare SSL mode set to Full (strict), WebSockets enabled
 
 ### 6. Docker Deployment
 

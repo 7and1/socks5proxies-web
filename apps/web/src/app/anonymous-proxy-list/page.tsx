@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ProxyListView } from "../../components/proxylist/ProxyListView";
 import { getProxyStats } from "../../lib/api-client";
+import { getProxyListRobots } from "../../lib/proxy-seo";
 
 function parseNumber(value: string | string[] | undefined) {
   if (!value) return undefined;
@@ -10,14 +11,17 @@ function parseNumber(value: string | string[] | undefined) {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const stats = await getProxyStats().catch(() => null);
+  const [stats, robots] = await Promise.all([
+    getProxyStats().catch(() => null),
+    getProxyListRobots({ anonymity: "anonymous" }),
+  ]);
   const total = stats?.data?.total;
   const countries = stats?.data?.countries;
   const totalLabel = total ? `${total.toLocaleString()}+` : "10,000+";
   const countriesLabel = countries ? `${countries}` : "100+";
 
   return {
-    title: `Anonymous Proxy List 2025 - ${totalLabel} Working Proxies`,
+    title: `Anonymous Proxy List 2026 - ${totalLabel} Working Proxies`,
     description: `Browse anonymous proxies across ${countriesLabel} countries. Filter by protocol, country, and port to keep your identity protected. Updated every few minutes.`,
     alternates: {
       canonical: "https://socks5proxies.com/anonymous-proxy-list",
@@ -28,6 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
       url: "https://socks5proxies.com/anonymous-proxy-list",
       type: "website",
     },
+    robots,
   };
 }
 

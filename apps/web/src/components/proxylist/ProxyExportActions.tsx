@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState, useCallback } from "react";
 import type { ProxyData } from "../../types/proxy";
 
 function escapeCsv(value: string | number | undefined | null) {
@@ -82,6 +82,7 @@ function buildSurfsharkList(data: ProxyData[]) {
 }
 
 type ExportFormat = "txt" | "csv" | "json" | "clash" | "surfshark";
+const SERVER_EXPORT_LIMIT = 5000;
 
 interface ProxyExportActionsProps {
   data: ProxyData[];
@@ -91,7 +92,7 @@ interface ProxyExportActionsProps {
   onClearSelection?: () => void;
 }
 
-export function ProxyExportActions({
+function ProxyExportActions({
   data,
   selected,
   basePath,
@@ -119,12 +120,12 @@ export function ProxyExportActions({
     return `${safe || "proxy-list"}-${date}`;
   }, [basePath]);
 
-  const setTemporaryStatus = (message: string) => {
+  const setTemporaryStatus = useCallback((message: string) => {
     setStatus(message);
     window.setTimeout(() => setStatus(null), 2400);
-  };
+  }, []);
 
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     if (!plain) {
       setTemporaryStatus("No proxies to copy.");
       return;
@@ -151,9 +152,9 @@ export function ProxyExportActions({
         setTemporaryStatus("Copy failed.");
       }
     }
-  };
+  }, [plain, setTemporaryStatus]);
 
-  const handleDownload = () => {
+  const handleDownload = useCallback(() => {
     if (!exportData.length) {
       setTemporaryStatus("No proxies to export.");
       return;
@@ -196,7 +197,17 @@ export function ProxyExportActions({
     link.remove();
     URL.revokeObjectURL(url);
     setTemporaryStatus("Export started.");
-  };
+  }, [
+    csv,
+    json,
+    clash,
+    surfshark,
+    plain,
+    format,
+    filenameBase,
+    exportData.length,
+    setTemporaryStatus,
+  ]);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -210,15 +221,35 @@ export function ProxyExportActions({
     return params.toString();
   }, [query]);
 
-  const apiBase =
-    process.env.NEXT_PUBLIC_API_URL || "https://api.socks5proxies.com";
+  const apiBase = (
+    process.env.NEXT_PUBLIC_API_URL || "https://api.socks5proxies.com"
+  ).replace(/\/$/, "");
   const apiUrl = `${apiBase}/api/proxies${queryParams ? `?${queryParams}` : ""}`;
+  const serverExportUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") return;
+        if (key === "offset" || key === "limit") return;
+        params.set(key, String(value));
+      });
+    }
+    params.set("limit", String(SERVER_EXPORT_LIMIT));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return `${apiBase}/api/proxies/export/${format}${suffix}`;
+  }, [apiBase, format, query]);
 
-  const selectedPlain =
-    selectionCount > 0 ? buildPlainList(selected || []) : "";
-  const checkHref = selectionCount
-    ? `/tools/bulk-checker?list=${encodeURIComponent(selectedPlain)}`
-    : "";
+  const selectedPlain = useMemo(
+    () => (selectionCount > 0 ? buildPlainList(selected || []) : ""),
+    [selectionCount, selected],
+  );
+  const checkHref = useMemo(
+    () =>
+      selectionCount
+        ? `/tools/bulk-checker?list=${encodeURIComponent(selectedPlain)}`
+        : "",
+    [selectionCount, selectedPlain],
+  );
 
   return (
     <div className="space-y-3">
@@ -258,6 +289,12 @@ export function ProxyExportActions({
           >
             Download
           </button>
+          <a
+            href={serverExportUrl}
+            className="rounded-full border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-sand-300 hover:bg-sand-50 dark:border-sand-700 dark:bg-sand-900 dark:text-sand-200 dark:hover:border-sand-600"
+          >
+            Full Export
+          </a>
           {selectionCount > 0 ? (
             <Link
               href={checkHref}
@@ -303,7 +340,19 @@ export function ProxyExportActions({
             {`print(requests.get(\"${apiUrl}\").json())`}
           </pre>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-ink-muted dark:text-sand-400">
+          <span>Need more than one page?</span>
+          <span>
+            Server export (up to {SERVER_EXPORT_LIMIT.toLocaleString()}{" "}
+            proxies):
+          </span>
+          <code className="break-all rounded bg-sand-100 px-2 py-1 text-[10px] text-ink dark:bg-sand-800 dark:text-sand-100">
+            {serverExportUrl}
+          </code>
+        </div>
       </div>
     </div>
   );
 }
+
+export default memo(ProxyExportActions);

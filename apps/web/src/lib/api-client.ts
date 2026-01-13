@@ -22,6 +22,90 @@ interface FacetResponse {
   };
 }
 
+// In-memory request cache for short-term deduplication
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  expiresAt: number;
+}
+
+const DEFAULT_CACHE_TTL = 5000; // 5 seconds
+const MAX_CACHE_SIZE = 100;
+
+class RequestCache {
+  private cache = new Map<string, CacheEntry<unknown>>();
+  private pendingRequests = new Map<string, Promise<unknown>>();
+
+  set<T>(key: string, data: T, ttl: number = DEFAULT_CACHE_TTL): void {
+    if (this.cache.size >= MAX_CACHE_SIZE) {
+      this.evictOldest();
+    }
+    const now = Date.now();
+    this.cache.set(key, { data, timestamp: now, expiresAt: now + ttl });
+  }
+
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data as T;
+  }
+
+  // Deduplicate in-flight requests
+  async dedupe<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const cached = this.get<T>(key);
+    if (cached) return cached;
+
+    const existing = this.pendingRequests.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+
+    const promise = fn().finally(() => {
+      this.pendingRequests.delete(key);
+    });
+    this.pendingRequests.set(key, promise);
+
+    return promise;
+  }
+
+  private evictOldest(): void {
+    let oldestKey: string | null = null;
+    let oldestTimestamp = Infinity;
+
+    for (const [key, entry] of this.cache) {
+      if (entry.timestamp < oldestTimestamp) {
+        oldestTimestamp = entry.timestamp;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey) {
+      this.cache.delete(oldestKey);
+    }
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.pendingRequests.clear();
+  }
+
+  // Invalidate by pattern
+  invalidate(pattern: string): void {
+    const regex = new RegExp(pattern);
+    for (const key of this.cache.keys()) {
+      if (regex.test(key)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+export const requestCache = new RequestCache();
+
 export class ApiError extends Error {
   constructor(
     public message: string,
@@ -179,6 +263,21 @@ export const apiClient = new ApiClient();
 
 const API_BASE = env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
 
+// Helper to build cache key from params
+function buildCacheKey(
+  prefix: string,
+  params?: Record<string, string | number | undefined>,
+): string {
+  const sortedParams = params
+    ? Object.entries(params)
+        .filter(([_, v]) => v !== undefined && v !== null && v !== "")
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("&")
+    : "";
+  return sortedParams ? `${prefix}:${sortedParams}` : prefix;
+}
+
 export async function getProxyList(params?: {
   country?: string;
   protocol?: string;
@@ -190,54 +289,76 @@ export async function getProxyList(params?: {
   limit?: number;
   offset?: number;
 }): Promise<ProxyListResponse> {
-  const searchParams = new URLSearchParams();
-  if (params?.country) searchParams.set("country", params.country);
-  if (params?.protocol) searchParams.set("protocol", params.protocol);
-  if (params?.port) searchParams.set("port", String(params.port));
-  if (params?.anonymity) searchParams.set("anonymity", params.anonymity);
-  if (params?.city) searchParams.set("city", params.city);
-  if (params?.region) searchParams.set("region", params.region);
-  if (params?.asn) searchParams.set("asn", String(params.asn));
-  if (params?.limit) searchParams.set("limit", String(params.limit));
-  if (params?.offset) searchParams.set("offset", String(params.offset));
+  const cacheKey = buildCacheKey("proxies", params);
 
-  const res = await fetch(`${API_BASE}/api/proxies?${searchParams}`, {
-    cache: "no-store",
+  return requestCache.dedupe(cacheKey, async () => {
+    const searchParams = new URLSearchParams();
+    if (params?.country) searchParams.set("country", params.country);
+    if (params?.protocol) searchParams.set("protocol", params.protocol);
+    if (params?.port) searchParams.set("port", String(params.port));
+    if (params?.anonymity) searchParams.set("anonymity", params.anonymity);
+    if (params?.city) searchParams.set("city", params.city);
+    if (params?.region) searchParams.set("region", params.region);
+    if (params?.asn) searchParams.set("asn", String(params.asn));
+    if (params?.limit) searchParams.set("limit", String(params.limit));
+    if (params?.offset) searchParams.set("offset", String(params.offset));
+
+    const res = await fetch(`${API_BASE}/api/proxies?${searchParams}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new ApiError("Failed to load proxies", res.status);
+    }
+    const data = await res.json();
+    // Cache for 10 seconds for proxy lists
+    requestCache.set(cacheKey, data, 10000);
+    return data;
   });
-  if (!res.ok) {
-    throw new ApiError("Failed to load proxies", res.status);
-  }
-  return res.json();
 }
 
 export async function getProxyStats(): Promise<ProxyStatsResponse> {
-  const res = await fetch(`${API_BASE}/api/proxies/stats`, {
-    cache: "no-store",
+  const cacheKey = "stats:proxies";
+
+  return requestCache.dedupe(cacheKey, async () => {
+    const res = await fetch(`${API_BASE}/api/proxies/stats`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new ApiError("Failed to load proxy stats", res.status);
+    }
+    const data = await res.json();
+    // Cache stats for 30 seconds
+    requestCache.set(cacheKey, data, 30000);
+    return data;
   });
-  if (!res.ok) {
-    throw new ApiError("Failed to load proxy stats", res.status);
-  }
-  return res.json();
 }
 
 export async function getRecentProxies(
   limit = 10,
 ): Promise<ProxyPreviewResponse> {
-  const params = new URLSearchParams();
-  if (limit) params.set("limit", String(limit));
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await fetch(`${API_BASE}/api/proxies/recent${suffix}`, {
-    cache: "no-store",
+  const cacheKey = `proxies:recent:${limit}`;
+
+  return requestCache.dedupe(cacheKey, async () => {
+    const params = new URLSearchParams();
+    if (limit) params.set("limit", String(limit));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${API_BASE}/api/proxies/recent${suffix}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new ApiError("Failed to load recent proxies", res.status);
+    }
+    const data = await res.json();
+    // Cache for 30 seconds
+    requestCache.set(cacheKey, data, 30000);
+    return data;
   });
-  if (!res.ok) {
-    throw new ApiError("Failed to load recent proxies", res.status);
-  }
-  return res.json();
 }
 
 export async function getRandomProxies(
   limit = 10,
 ): Promise<ProxyPreviewResponse> {
+  // Random proxies are not cached to ensure randomness
   const params = new URLSearchParams();
   if (limit) params.set("limit", String(limit));
   const suffix = params.toString() ? `?${params.toString()}` : "";
@@ -254,44 +375,69 @@ export async function getFacets(
   type: "countries" | "ports" | "protocols" | "cities" | "regions" | "asns",
   options?: { limit?: number; offset?: number },
 ): Promise<FacetItem[]> {
-  const params = new URLSearchParams();
-  if (options?.limit) params.set("limit", String(options.limit));
-  if (options?.offset) params.set("offset", String(options.offset));
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await fetch(`${API_BASE}/api/facets/${type}${suffix}`, {
-    cache: "no-store",
+  const cacheKey = buildCacheKey(`facets:${type}`, options);
+
+  return requestCache.dedupe(cacheKey, async () => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.offset) params.set("offset", String(options.offset));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${API_BASE}/api/facets/${type}${suffix}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new ApiError("Failed to load facets", res.status);
+    }
+    const payload = (await res.json()) as FacetResponse;
+    const data = payload.data ?? [];
+    // Cache facets for 60 seconds
+    requestCache.set(cacheKey, data, 60000);
+    return data;
   });
-  if (!res.ok) {
-    throw new ApiError("Failed to load facets", res.status);
-  }
-  const payload = (await res.json()) as FacetResponse;
-  return payload.data ?? [];
 }
 
 export async function getFacetPage(
   type: "countries" | "ports" | "protocols" | "cities" | "regions" | "asns",
   options?: { limit?: number; offset?: number },
 ): Promise<FacetResponse> {
-  const params = new URLSearchParams();
-  if (options?.limit) params.set("limit", String(options.limit));
-  if (options?.offset) params.set("offset", String(options.offset));
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await fetch(`${API_BASE}/api/facets/${type}${suffix}`, {
-    cache: "no-store",
+  const cacheKey = buildCacheKey(`facetPage:${type}`, options);
+
+  return requestCache.dedupe(cacheKey, async () => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.offset) params.set("offset", String(options.offset));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${API_BASE}/api/facets/${type}${suffix}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new ApiError("Failed to load facets", res.status);
+    }
+    const data = (await res.json()) as FacetResponse;
+    // Cache facet pages for 60 seconds
+    requestCache.set(cacheKey, data, 60000);
+    return data;
   });
-  if (!res.ok) {
-    throw new ApiError("Failed to load facets", res.status);
-  }
-  return (await res.json()) as FacetResponse;
 }
 
 export async function getASNDetails(asn: number): Promise<ASNDetails | null> {
-  const res = await fetch(`${API_BASE}/api/asn/${asn}`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new ApiError("Failed to load ASN details", res.status);
-  }
-  const payload = (await res.json()) as { data?: ASNDetails };
-  return payload.data ?? null;
+  const cacheKey = `asn:${asn}`;
+
+  return requestCache.dedupe(cacheKey, async () => {
+    const res = await fetch(`${API_BASE}/api/asn/${asn}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new ApiError("Failed to load ASN details", res.status);
+    }
+    const payload = (await res.json()) as { data?: ASNDetails };
+    const data = payload.data ?? null;
+    // Cache ASN details for 5 minutes
+    if (data) {
+      requestCache.set(cacheKey, data, 300000);
+    }
+    return data;
+  });
 }
 
 export class WebSocketClient {

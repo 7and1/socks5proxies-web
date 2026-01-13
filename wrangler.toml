@@ -1,0 +1,62 @@
+# Cloudflare Pages/Workers Configuration for Socks5Proxies.com
+# Account ID is loaded from CLOUDFLARE_ACCOUNT_ID environment variable
+
+name = "socks5proxies"
+main = "apps/web/.open-next/worker.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Assets for static files
+[assets]
+directory = "apps/web/.open-next/assets"
+binding = "ASSETS"
+
+# Route configuration
+routes = [
+  { pattern = "socks5proxies.com/*", zone_name = "socks5proxies.com" },
+  { pattern = "www.socks5proxies.com/*", zone_name = "socks5proxies.com" }
+]
+
+# Environment variables
+[vars]
+NEXT_PUBLIC_API_URL = "https://api.socks5proxies.com"
+NEXT_PUBLIC_WS_URL = "wss://api.socks5proxies.com/ws"
+NEXT_PUBLIC_SITE_URL = "https://socks5proxies.com"
+NODE_ENV = "production"
+
+# Production environment secrets (set via: wrangler secret put <name>)
+# JWT_SECRET, REDIS_PASSWORD, etc.
+
+# KV Namespace for caching (optional - create via: wrangler kv:namespace create "CACHE")
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your_kv_namespace_id"
+
+# D1 Database (optional - for edge database)
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "socks5proxies"
+# database_id = "your_d1_database_id"
+
+# R2 Bucket for file storage (optional)
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "socks5proxies"
+
+# Cron triggers for scheduled tasks
+# [triggers]
+# crons = ["0 */6 * * *"]  # Every 6 hours
+
+# Build configuration
+[build]
+command = "cd apps/web && pnpm build:cloudflare"
+cwd = "."
+
+# Observability
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+# Limits
+[limits]
+cpu_ms = 50

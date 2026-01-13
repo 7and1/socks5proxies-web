@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
@@ -43,6 +44,15 @@ type ProxyListItem struct {
 	AnonymityLevel string   `json:"anonymity_level"`
 	Uptime         int      `json:"uptime"`
 	LastSeen       string   `json:"last_seen"`
+}
+
+type ProxyListMeta struct {
+	Total    int    `json:"total"`
+	Limit    int    `json:"limit"`
+	Offset   int    `json:"offset"`
+	Cached   bool   `json:"cached"`
+	CacheAge int    `json:"cache_age"`
+	LastSync string `json:"last_sync,omitempty"`
 }
 
 func (h *Handler) ListProxyListPublic(c *gin.Context) {
@@ -91,11 +101,15 @@ func (h *Handler) GetProxyStats(c *gin.Context) {
 
 	cacheKey := "proxylist:stats"
 	cacheTTL := time.Minute
+	setCacheHeaders(c, cacheTTL, true)
 	if h.redis != nil && cacheTTL > 0 {
 		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
 			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
 				meta["cached"] = true
 				meta["cache_age"] = h.getCacheAgeSeconds(c)
+				if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+					meta["last_sync"] = lastSync.UTC().Format(time.RFC3339)
+				}
 			}
 			c.JSON(http.StatusOK, cachedPayload)
 			return
@@ -139,11 +153,15 @@ func (h *Handler) ListRecentProxies(c *gin.Context) {
 	limit := parseLimit(c.Query("limit"), 10, 50)
 	cacheKey := fmt.Sprintf("proxylist:recent:%d", limit)
 	cacheTTL := 30 * time.Second
+	setCacheHeaders(c, cacheTTL, true)
 	if h.redis != nil && cacheTTL > 0 {
 		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
 			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
 				meta["cached"] = true
 				meta["cache_age"] = h.getCacheAgeSeconds(c)
+				if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+					meta["last_sync"] = lastSync.UTC().Format(time.RFC3339)
+				}
 			}
 			c.JSON(http.StatusOK, cachedPayload)
 			return
@@ -169,6 +187,11 @@ func (h *Handler) ListRecentProxies(c *gin.Context) {
 			"cache_age": h.getCacheAgeSeconds(c),
 		},
 	}
+	if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+		if meta, ok := payload["meta"].(gin.H); ok {
+			meta["last_sync"] = lastSync.UTC().Format(time.RFC3339)
+		}
+	}
 
 	if h.redis != nil && cacheTTL > 0 {
 		if raw, err := json.Marshal(payload); err == nil {
@@ -186,6 +209,7 @@ func (h *Handler) ListRandomProxies(c *gin.Context) {
 	}
 
 	limit := parseLimit(c.Query("limit"), 10, 50)
+	setCacheHeaders(c, 0, true)
 	records, err := h.proxyStore.ListRandomProxies(c.Request.Context(), limit)
 	if err != nil {
 		RespondError(c, http.StatusInternalServerError, "DATABASE_ERROR", "failed to load random proxies", nil)
@@ -197,13 +221,21 @@ func (h *Handler) ListRandomProxies(c *gin.Context) {
 		data = append(data, transformProxyRecord(record))
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	payload := gin.H{
 		"data": data,
 		"meta": gin.H{
 			"limit":     limit,
 			"cache_age": h.getCacheAgeSeconds(c),
+			"cached":    false,
 		},
-	})
+	}
+	if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+		if meta, ok := payload["meta"].(gin.H); ok {
+			meta["last_sync"] = lastSync.UTC().Format(time.RFC3339)
+		}
+	}
+
+	c.JSON(http.StatusOK, payload)
 }
 
 func (h *Handler) ExportProxyList(c *gin.Context) {
@@ -213,9 +245,42 @@ func (h *Handler) ExportProxyList(c *gin.Context) {
 	}
 
 	format := strings.ToLower(strings.TrimPrefix(c.Param("format"), "."))
-	filters := buildProxyListFilters(c, 500, 5000)
+	if !isExportFormatSupported(format) {
+		RespondError(c, http.StatusBadRequest, "INVALID_EXPORT_FORMAT", "unsupported export format", nil)
+		return
+	}
 
-	records, _, err := h.proxyStore.ListProxyList(c.Request.Context(), filters)
+	opts := parseExportOptions(c, format)
+	if opts.Async {
+		if h.exportManager == nil {
+			RespondError(c, http.StatusServiceUnavailable, "EXPORT_UNAVAILABLE", "export jobs unavailable", nil)
+			return
+		}
+		job, err := h.exportManager.CreateJob(
+			c.Request.Context(),
+			opts.Format,
+			opts.Filters,
+			opts.TotalLimit,
+			opts.Offset,
+			opts.PageSize,
+		)
+		if err != nil {
+			RespondError(c, http.StatusBadRequest, "EXPORT_JOB_ERROR", err.Error(), nil)
+			return
+		}
+		respondExportJobAccepted(c, job)
+		return
+	}
+
+	if opts.Stream || opts.TotalLimit > opts.PageSize {
+		streamExportResponse(c, h.proxyStore, opts)
+		return
+	}
+
+	opts.Filters.Limit = opts.TotalLimit
+	opts.Filters.Offset = opts.Offset
+
+	records, _, err := h.proxyStore.ListProxyList(c.Request.Context(), opts.Filters)
 	if err != nil {
 		RespondError(c, http.StatusInternalServerError, "DATABASE_ERROR", "failed to export proxies", nil)
 		return
@@ -226,16 +291,15 @@ func (h *Handler) ExportProxyList(c *gin.Context) {
 		data = append(data, transformProxyRecord(record))
 	}
 
-	filename := fmt.Sprintf("proxy-export-%s-%s.%s", filters.Protocol, time.Now().UTC().Format("2006-01-02"), format)
-	if filters.Protocol == "" {
+	filename := fmt.Sprintf("proxy-export-%s-%s.%s", opts.Filters.Protocol, time.Now().UTC().Format("2006-01-02"), format)
+	if opts.Filters.Protocol == "" {
 		filename = fmt.Sprintf("proxy-export-%s.%s", time.Now().UTC().Format("2006-01-02"), format)
 	}
 
 	switch format {
 	case "txt", "text", "list":
 		payload := buildPlainProxyList(data)
-		c.Header("Content-Type", "text/plain; charset=utf-8")
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		setExportHeaders(c, format, filename)
 		c.String(http.StatusOK, payload)
 	case "csv":
 		payload, err := buildProxyCSV(data)
@@ -243,21 +307,18 @@ func (h *Handler) ExportProxyList(c *gin.Context) {
 			RespondError(c, http.StatusInternalServerError, "EXPORT_ERROR", "failed to build csv export", nil)
 			return
 		}
-		c.Header("Content-Type", "text/csv; charset=utf-8")
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		setExportHeaders(c, format, filename)
 		c.Data(http.StatusOK, "text/csv; charset=utf-8", payload)
 	case "json":
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		setExportHeaders(c, format, filename)
 		c.JSON(http.StatusOK, gin.H{"data": data})
 	case "clash":
 		payload := buildClashConfig(data)
-		c.Header("Content-Type", "text/yaml; charset=utf-8")
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		setExportHeaders(c, format, filename)
 		c.String(http.StatusOK, payload)
 	case "surfshark":
 		payload := buildSurfsharkList(data)
-		c.Header("Content-Type", "text/plain; charset=utf-8")
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		setExportHeaders(c, format, filename)
 		c.String(http.StatusOK, payload)
 	default:
 		RespondError(c, http.StatusBadRequest, "INVALID_EXPORT_FORMAT", "unsupported export format", nil)
@@ -302,16 +363,34 @@ func (h *Handler) handleProxyList(c *gin.Context, authenticated bool) {
 	if authenticated {
 		cacheTTL = h.cfg.ProxyAPICacheTTL
 	}
+	setCacheHeaders(c, cacheTTL, !authenticated)
+	if authenticated {
+		c.Header("Vary", "Authorization")
+	}
 	if h.redis != nil && cacheTTL > 0 {
 		cacheKey = buildProxyCacheKey(filters, authenticated)
-		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
-			cacheAge := h.getCacheAgeSeconds(c)
-			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
-				meta["cached"] = true
-				meta["cache_age"] = cacheAge
+		if cachedRaw, err := h.redis.Get(c, cacheKey).Result(); err == nil && cachedRaw != "" {
+			var cachedResponse struct {
+				Data []ProxyListItem `json:"data"`
+				Meta ProxyListMeta   `json:"meta"`
 			}
-			c.JSON(http.StatusOK, cachedPayload)
-			return
+			if err := json.Unmarshal([]byte(cachedRaw), &cachedResponse); err == nil {
+				cacheAge := h.getCacheAgeSeconds(c)
+				cachedResponse.Meta.Cached = true
+				cachedResponse.Meta.CacheAge = cacheAge
+				if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+					cachedResponse.Meta.LastSync = lastSync.UTC().Format(time.RFC3339)
+				}
+
+				if etag := buildProxyListETag(cachedResponse.Data, cachedResponse.Meta); etag != "" {
+					if writeETagAndCheck(c, etag) {
+						return
+					}
+				}
+
+				c.JSON(http.StatusOK, cachedResponse)
+				return
+			}
 		}
 	}
 
@@ -327,20 +406,31 @@ func (h *Handler) handleProxyList(c *gin.Context, authenticated bool) {
 	}
 
 	cacheAge := h.getCacheAgeSeconds(c)
+	meta := ProxyListMeta{
+		Total:    total,
+		Limit:    filters.Limit,
+		Offset:   filters.Offset,
+		Cached:   false,
+		CacheAge: cacheAge,
+	}
+	if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+		meta.LastSync = lastSync.UTC().Format(time.RFC3339)
+	}
+
 	payload := gin.H{
 		"data": data,
-		"meta": gin.H{
-			"total":     total,
-			"limit":     filters.Limit,
-			"offset":    filters.Offset,
-			"cached":    false,
-			"cache_age": cacheAge,
-		},
+		"meta": meta,
 	}
 
 	if h.redis != nil && cacheTTL > 0 && cacheKey != "" {
 		if raw, err := json.Marshal(payload); err == nil {
 			_ = h.redis.Set(c, cacheKey, raw, cacheTTL).Err()
+		}
+	}
+
+	if etag := buildProxyListETag(data, meta); etag != "" {
+		if writeETagAndCheck(c, etag) {
+			return
 		}
 	}
 
@@ -406,9 +496,17 @@ func (h *Handler) listProxyFacets(c *gin.Context, facetType string) {
 
 	cacheKey := ""
 	cacheTTL := h.cfg.ProxyWebCacheTTL
+	setCacheHeaders(c, cacheTTL, true)
 	if h.redis != nil && cacheTTL > 0 {
 		cacheKey = "proxylist:facets:" + facetType + ":" + strconv.Itoa(limit) + ":" + strconv.Itoa(offset)
 		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
+			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
+				meta["cached"] = true
+				meta["cache_age"] = h.getCacheAgeSeconds(c)
+				if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+					meta["last_sync"] = lastSync.UTC().Format(time.RFC3339)
+				}
+			}
 			c.JSON(http.StatusOK, cachedPayload)
 			return
 		}
@@ -433,6 +531,13 @@ func (h *Handler) listProxyFacets(c *gin.Context, facetType string) {
 			"limit":  limit,
 			"offset": offset,
 		},
+	}
+	if meta, ok := payload["meta"].(gin.H); ok {
+		meta["cached"] = false
+		meta["cache_age"] = h.getCacheAgeSeconds(c)
+		if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+			meta["last_sync"] = lastSync.UTC().Format(time.RFC3339)
+		}
 	}
 
 	if h.redis != nil && cacheTTL > 0 && cacheKey != "" {
@@ -848,4 +953,88 @@ func rateWindowReset(window time.Duration) int64 {
 	now := time.Now().UTC()
 	windowStart := now.Truncate(window)
 	return windowStart.Add(window).Unix()
+}
+
+func setCacheHeaders(c *gin.Context, ttl time.Duration, publicCache bool) {
+	if ttl <= 0 {
+		c.Header("Cache-Control", "no-store")
+		return
+	}
+	seconds := int(ttl.Seconds())
+	if seconds <= 0 {
+		c.Header("Cache-Control", "no-store")
+		return
+	}
+	scope := "public"
+	if !publicCache {
+		scope = "private"
+	}
+	stale := seconds * 3
+	c.Header("Cache-Control", fmt.Sprintf("%s, max-age=%d, s-maxage=%d, stale-while-revalidate=%d", scope, seconds, seconds, stale))
+}
+
+func buildProxyListETag(data []ProxyListItem, meta ProxyListMeta) string {
+	if len(data) == 0 && meta.Total == 0 {
+		return ""
+	}
+	etagPayload := struct {
+		Data []ProxyListItem `json:"data"`
+		Meta struct {
+			Total    int    `json:"total"`
+			Limit    int    `json:"limit"`
+			Offset   int    `json:"offset"`
+			LastSync string `json:"last_sync,omitempty"`
+		} `json:"meta"`
+	}{
+		Data: data,
+	}
+	etagPayload.Meta.Total = meta.Total
+	etagPayload.Meta.Limit = meta.Limit
+	etagPayload.Meta.Offset = meta.Offset
+	etagPayload.Meta.LastSync = meta.LastSync
+
+	raw, err := json.Marshal(etagPayload)
+	if err != nil {
+		return ""
+	}
+	hash := sha256.Sum256(raw)
+	return fmt.Sprintf(`W/"%x"`, hash)
+}
+
+func writeETagAndCheck(c *gin.Context, etag string) bool {
+	if etag == "" {
+		return false
+	}
+	c.Header("ETag", etag)
+	ifNoneMatch := c.GetHeader("If-None-Match")
+	if ifNoneMatch == "" {
+		return false
+	}
+	if matchETag(ifNoneMatch, etag) {
+		c.Status(http.StatusNotModified)
+		return true
+	}
+	return false
+}
+
+func matchETag(ifNoneMatch, etag string) bool {
+	normalized := normalizeETag(etag)
+	for _, candidate := range strings.Split(ifNoneMatch, ",") {
+		tag := strings.TrimSpace(candidate)
+		if tag == "*" {
+			return true
+		}
+		if normalizeETag(tag) == normalized {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeETag(tag string) string {
+	trimmed := strings.TrimSpace(tag)
+	trimmed = strings.TrimPrefix(trimmed, "W/")
+	trimmed = strings.TrimPrefix(trimmed, "w/")
+	trimmed = strings.Trim(trimmed, "\"")
+	return trimmed
 }

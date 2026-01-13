@@ -183,6 +183,59 @@ ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com &
 
 ---
 
+## Export Jobs
+
+### Notes
+
+- Export jobs are stored in Redis when available; otherwise in-memory.
+- Export files are written to `EXPORT_DIR` (default: `./data/exports`).
+- Jobs expire after `EXPORT_JOB_TTL` (default: `2h`) and files are cleaned up on expiry.
+
+### Check Job Status
+
+```bash
+curl -s "https://api.socks5proxies.com/api/proxies/export/jobs/<job_id>"
+```
+
+### Download Completed Job
+
+```bash
+curl -s -O "https://api.socks5proxies.com/api/proxies/export/jobs/<job_id>/download"
+```
+
+### Monitor Export Usage
+
+```bash
+ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com && du -sh data/api/exports"
+ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com && ls -lh data/api/exports | tail -n 20"
+```
+
+### Cleanup (if disk usage grows)
+
+```bash
+ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com && ls -lh data/api/exports"
+ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com && find data/api/exports -type f -mtime +2 -delete"
+```
+
+### Backup & Disk Alerts
+
+```bash
+# One-off backup (keeps 7 days by default)
+ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com && deploy/ops/backup-data.sh"
+
+# Disk usage check for exports (use in cron / monitoring)
+ssh root@107.174.42.198 "cd /opt/docker-projects/heavy-tasks/socks5proxies.com && deploy/ops/check-export-disk.sh"
+```
+
+### Cloudflare (Real IP)
+
+```bash
+# Refresh Cloudflare IP allowlist before nginx reload
+ssh root@107.174.42.198 \"cd /opt/docker-projects/heavy-tasks/socks5proxies.com && deploy/nginx/update-cloudflare-ips.sh\"
+```
+
+---
+
 ## Troubleshooting
 
 ### Service Not Starting

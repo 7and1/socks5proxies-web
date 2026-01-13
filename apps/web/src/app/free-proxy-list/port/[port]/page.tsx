@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ProxyListView } from "../../../../components/proxylist/ProxyListView";
+import { getProxyListRobots } from "../../../../lib/proxy-seo";
 
 function parseNumber(value: string | string[] | undefined) {
   if (!value) return undefined;
@@ -8,17 +9,22 @@ function parseNumber(value: string | string[] | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function generateMetadata({
+export async function generateMetadata({
   params,
 }: {
   params: { port: string };
-}): Metadata {
+}): Promise<Metadata> {
+  const portNumber = Number(params.port);
+  const robots = await getProxyListRobots({
+    port: Number.isFinite(portNumber) ? portNumber : undefined,
+  });
   return {
     title: `Free Proxy List on Port ${params.port}`,
     description: `Browse free proxies running on port ${params.port} with protocol and anonymity filters.`,
     alternates: {
       canonical: `https://socks5proxies.com/free-proxy-list/port/${params.port}`,
     },
+    robots,
   };
 }
 

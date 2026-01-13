@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Free Proxy Guide 2025 - Risks, Use Cases, and Safe Setup",
+  title: "Free Proxy Guide 2026 - Risks, Use Cases, and Safe Setup",
   description:
     "Understand what free proxies are, where they come from, and how to use them safely. Learn the trade-offs, best practices, and when to upgrade.",
   keywords: [
@@ -53,7 +53,7 @@ const breadcrumbJsonLd = {
 const articleJsonLd = {
   "@context": "https://schema.org",
   "@type": "Article",
-  headline: "Free Proxy Guide 2025",
+  headline: "Free Proxy Guide 2026",
   description:
     "Learn how free proxies work, the risks involved, and best practices for safe usage.",
   author: {

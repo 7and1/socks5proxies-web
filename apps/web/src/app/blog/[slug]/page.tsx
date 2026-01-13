@@ -384,6 +384,170 @@ const categoryColors: Record<string, string> = {
   news: "bg-green-100 text-green-700",
 };
 
+type ContentBlock =
+  | { type: "heading"; level: 2 | 3; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "ul"; items: string[] }
+  | { type: "ol"; items: string[] }
+  | { type: "code"; language: string; code: string }
+  | { type: "table"; header: string[]; rows: string[][] };
+
+const tableSeparatorPattern = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
+
+function isTableLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith("|") && trimmed.includes("|");
+}
+
+function isUnorderedLine(line: string): boolean {
+  return line.trim().startsWith("- ");
+}
+
+function isOrderedLine(line: string): boolean {
+  return /^\d+\.\s+/.test(line.trim());
+}
+
+function parseTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function parseMarkdown(content: string): ContentBlock[] {
+  const lines = content.split("\n");
+  const blocks: ContentBlock[] = [];
+  let i = 0;
+  let inCode = false;
+  let codeLang = "";
+  let codeLines: string[] = [];
+
+  const flushCode = () => {
+    const code = codeLines.join("\n").trimEnd();
+    if (code) {
+      blocks.push({ type: "code", language: codeLang, code });
+    }
+    codeLines = [];
+    codeLang = "";
+  };
+
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const trimmedRight = rawLine.trimEnd();
+    const trimmed = trimmedRight.trim();
+
+    if (trimmed.startsWith("```")) {
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        inCode = true;
+        codeLang = trimmed.replace("```", "").trim();
+      }
+      i += 1;
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(rawLine);
+      i += 1;
+      continue;
+    }
+
+    if (!trimmed) {
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("## ")) {
+      blocks.push({ type: "heading", level: 2, text: trimmed.slice(3) });
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("### ")) {
+      blocks.push({ type: "heading", level: 3, text: trimmed.slice(4) });
+      i += 1;
+      continue;
+    }
+
+    if (isTableLine(trimmed)) {
+      const tableLines: string[] = [];
+      while (i < lines.length && isTableLine(lines[i].trim())) {
+        tableLines.push(lines[i].trim());
+        i += 1;
+      }
+      const tableRows = tableLines.map(parseTableRow);
+      if (tableRows.length > 0) {
+        const header = tableRows[0];
+        let startIndex = 1;
+        if (
+          tableLines.length > 1 &&
+          tableSeparatorPattern.test(tableLines[1])
+        ) {
+          startIndex = 2;
+        }
+        const rows = tableRows.slice(startIndex);
+        blocks.push({ type: "table", header, rows });
+      }
+      continue;
+    }
+
+    if (isUnorderedLine(trimmed)) {
+      const items: string[] = [];
+      while (i < lines.length && isUnorderedLine(lines[i])) {
+        items.push(lines[i].trim().replace(/^- /, "").trim());
+        i += 1;
+      }
+      blocks.push({ type: "ul", items });
+      continue;
+    }
+
+    if (isOrderedLine(trimmed)) {
+      const items: string[] = [];
+      while (i < lines.length && isOrderedLine(lines[i])) {
+        items.push(
+          lines[i]
+            .trim()
+            .replace(/^\d+\.\s+/, "")
+            .trim(),
+        );
+        i += 1;
+      }
+      blocks.push({ type: "ol", items });
+      continue;
+    }
+
+    const paragraphLines = [trimmed];
+    i += 1;
+    while (i < lines.length) {
+      const next = lines[i].trim();
+      if (
+        !next ||
+        next.startsWith("## ") ||
+        next.startsWith("### ") ||
+        next.startsWith("```") ||
+        isTableLine(next) ||
+        isUnorderedLine(next) ||
+        isOrderedLine(next)
+      ) {
+        break;
+      }
+      paragraphLines.push(next);
+      i += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraphLines.join(" ") });
+  }
+
+  if (inCode) {
+    flushCode();
+  }
+
+  return blocks;
+}
+
 export async function generateStaticParams() {
   return Object.keys(posts).map((slug) => ({ slug }));
 }
@@ -530,49 +694,93 @@ export default async function BlogPostPage({
         </div>
 
         <div className="prose prose-sand max-w-none">
-          {post.content.split("\n").map((paragraph, i) => {
-            if (paragraph.startsWith("## ")) {
-              return (
-                <h2 key={i} className="mt-8 text-2xl font-semibold">
-                  {paragraph.replace("## ", "")}
-                </h2>
-              );
+          {parseMarkdown(post.content).map((block, index) => {
+            switch (block.type) {
+              case "heading":
+                return block.level === 2 ? (
+                  <h2 key={index} className="mt-8 text-2xl font-semibold">
+                    {block.text}
+                  </h2>
+                ) : (
+                  <h3 key={index} className="mt-6 text-xl font-semibold">
+                    {block.text}
+                  </h3>
+                );
+              case "ul":
+                return (
+                  <ul key={index} className="mt-4 list-disc pl-6">
+                    {block.items.map((item, itemIndex) => (
+                      <li key={itemIndex}>{item}</li>
+                    ))}
+                  </ul>
+                );
+              case "ol":
+                return (
+                  <ol key={index} className="mt-4 list-decimal pl-6">
+                    {block.items.map((item, itemIndex) => (
+                      <li key={itemIndex}>{item}</li>
+                    ))}
+                  </ol>
+                );
+              case "code":
+                return (
+                  <pre
+                    key={index}
+                    className="mt-4 overflow-x-auto rounded-2xl bg-sand-900 p-4 text-sm text-sand-100"
+                  >
+                    <code
+                      className={
+                        block.language ? `language-${block.language}` : ""
+                      }
+                    >
+                      {block.code}
+                    </code>
+                  </pre>
+                );
+              case "table":
+                return (
+                  <div key={index} className="mt-4 overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr>
+                          {block.header.map((cell, cellIndex) => (
+                            <th
+                              key={cellIndex}
+                              className="border-b border-sand-200 px-3 py-2 text-left text-ink"
+                            >
+                              {cell}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {block.rows.map((row, rowIndex) => (
+                          <tr
+                            key={rowIndex}
+                            className="border-b border-sand-100"
+                          >
+                            {row.map((cell, cellIndex) => (
+                              <td
+                                key={cellIndex}
+                                className="px-3 py-2 text-ink-muted"
+                              >
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              case "paragraph":
+              default:
+                return (
+                  <p key={index} className="mt-4 text-ink-muted">
+                    {block.text}
+                  </p>
+                );
             }
-            if (paragraph.startsWith("### ")) {
-              return (
-                <h3 key={i} className="mt-6 text-xl font-semibold">
-                  {paragraph.replace("### ", "")}
-                </h3>
-              );
-            }
-            if (paragraph.startsWith("- ")) {
-              return (
-                <li key={i} className="ml-4">
-                  {paragraph.replace("- ", "")}
-                </li>
-              );
-            }
-            if (paragraph.startsWith("1. ") || paragraph.match(/^\d+\. /)) {
-              return (
-                <li key={i} className="ml-4 list-decimal">
-                  {paragraph.replace(/^\d+\. /, "")}
-                </li>
-              );
-            }
-            if (paragraph.startsWith("```")) {
-              return null; // Skip code block markers for now
-            }
-            if (paragraph.startsWith("|")) {
-              return null; // Skip table rows for now
-            }
-            if (paragraph.trim() === "") {
-              return null;
-            }
-            return (
-              <p key={i} className="mt-4 text-ink-muted">
-                {paragraph}
-              </p>
-            );
           })}
         </div>
 

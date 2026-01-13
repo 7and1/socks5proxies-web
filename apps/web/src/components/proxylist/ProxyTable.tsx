@@ -340,38 +340,61 @@ function ProxyTableComponent({
         </div>
       </div>
 
-      <div className="grid gap-4 md:hidden">
+      <div className="grid gap-3 md:hidden">
         {sortedData.map((proxy) => {
           const key = `${proxy.ip}:${proxy.port}`;
           const ageSeconds = getFreshnessAgeSeconds(proxy.last_seen);
           return (
             <div
               key={key}
-              className="rounded-2xl border border-sand-200 bg-white/90 p-4 shadow-sm dark:border-sand-700 dark:bg-sand-900/80"
+              className="relative overflow-hidden rounded-2xl border border-sand-200 bg-white/90 p-4 shadow-sm transition-shadow active:shadow-md dark:border-sand-700 dark:bg-sand-900/80"
               onClick={(event) => {
                 const target = event.target as HTMLElement;
-                if (target.closest("button") || target.closest("input")) {
+                if (
+                  target.closest("button") ||
+                  target.closest("input") ||
+                  target.closest("label")
+                ) {
                   return;
                 }
                 handleCopy(key);
               }}
               role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleCopy(key);
+                }
+              }}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-mono text-xs">{key}</p>
-                  <p className="mt-1 text-xs text-ink-muted dark:text-sand-400">
-                    {proxy.country_name || proxy.country_code || "Unknown"}
-                  </p>
+                <div className="flex min-w-0 flex-1">
+                  <span className="text-xl flex-shrink-0">
+                    {countryCodeToFlag(proxy.country_code)}
+                  </span>
+                  <div className="ml-3 min-w-0 flex-1">
+                    <p className="font-mono text-sm font-semibold text-ink dark:text-sand-100 truncate">
+                      {key}
+                    </p>
+                    <p className="mt-0.5 text-xs text-ink-muted dark:text-sand-400 truncate">
+                      {proxy.country_name || proxy.country_code || "Unknown"}
+                      {proxy.city && `, ${proxy.city}`}
+                    </p>
+                  </div>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={selectedKeys.has(key)}
-                  onChange={() => toggleRow(key)}
-                  aria-label={`Select proxy ${key}`}
-                />
+                <label className="flex-shrink-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedKeys.has(key)}
+                    onChange={() => toggleRow(key)}
+                    aria-label={`Select proxy ${key}`}
+                    className="h-5 w-5 rounded border-sand-300 text-ocean-600 focus:ring-ocean-500 dark:border-sand-600 dark:bg-sand-800"
+                  />
+                </label>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
                 {proxy.protocols.map((protocol) => (
                   <span
                     key={`${key}-${protocol}`}
@@ -380,30 +403,57 @@ function ProxyTableComponent({
                     {protocol}
                   </span>
                 ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted dark:text-sand-400">
-                <span className="rounded-full bg-sand-100 px-2 py-1 dark:bg-sand-800">
-                  {ANONYMITY_LEVELS[proxy.anon] || proxy.anonymity_level}
-                </span>
-                <span>Uptime {proxy.uptime}%</span>
-                <span>{proxy.delay ? `${proxy.delay} ms` : "--"}</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-lg">
-                  {countryCodeToFlag(proxy.country_code)}
-                </span>
                 <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${getFreshnessStyle(
-                    ageSeconds,
-                  )}`}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                    ageSeconds <= 300
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                      : ageSeconds <= 900
+                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                        : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                  }`}
                 >
                   {formatRelativeTime(proxy.last_seen)}
                 </span>
               </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-lg bg-sand-50 p-2 dark:bg-sand-800/50">
+                  <p className="text-[10px] uppercase tracking-wider text-ink-muted dark:text-sand-500">
+                    Anonymity
+                  </p>
+                  <p className="mt-0.5 font-semibold text-ink dark:text-sand-200">
+                    {ANONYMITY_LEVELS[proxy.anon] || proxy.anonymity_level}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-sand-50 p-2 dark:bg-sand-800/50">
+                  <p className="text-[10px] uppercase tracking-wider text-ink-muted dark:text-sand-500">
+                    Uptime
+                  </p>
+                  <p className="mt-0.5 font-semibold text-ink dark:text-sand-200">
+                    {proxy.uptime}%
+                  </p>
+                </div>
+                <div className="rounded-lg bg-sand-50 p-2 dark:bg-sand-800/50">
+                  <p className="text-[10px] uppercase tracking-wider text-ink-muted dark:text-sand-500">
+                    Delay
+                  </p>
+                  <p className="mt-0.5 font-semibold text-ink dark:text-sand-200">
+                    {proxy.delay ? `${proxy.delay}ms` : "--"}
+                  </p>
+                </div>
+              </div>
+
+              {proxy.asn && (
+                <div className="mt-2 text-xs text-ink-muted dark:text-sand-400">
+                  <span className="font-mono">AS{proxy.asn}</span>
+                  {proxy.org && ` · ${proxy.org}`}
+                </div>
+              )}
+
               {copiedKey === key && (
-                <p className="mt-2 text-xs font-semibold text-emerald-600">
-                  Copied to clipboard
-                </p>
+                <div className="absolute bottom-2 right-2 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white shadow-lg">
+                  Copied!
+                </div>
               )}
             </div>
           );

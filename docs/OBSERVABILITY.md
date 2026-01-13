@@ -52,3 +52,8 @@ docker compose -f deploy/monitoring/docker-compose.observability.yml up -d
 
 - If no Sentry/OTel variables are set, observability gracefully degrades to logs only.
 - WAF applies to `/api/*` routes only and can be disabled with `WAF_ENABLED=false`.
+
+## Metrics Highlights
+
+- `http_requests_total`, `http_request_duration_seconds` — API throughput and latency.
+- `export_jobs_total`, `export_job_duration_seconds`, `export_jobs_in_flight` — export pipeline health.

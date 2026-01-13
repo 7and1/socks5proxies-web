@@ -87,11 +87,15 @@ func main() {
 
 	router.GET("/api/health", apiHandler.Health)
 	router.GET("/api/whoami", apiHandler.Whoami)
+	router.POST("/api/cache/warm", api.RequireAPIKey(cfg.APIKeys), apiHandler.WarmCacheEndpoint)
 	router.GET("/api/proxies", apiHandler.ListProxyListPublic)
 	router.GET("/api/proxies/stats", apiHandler.GetProxyStats)
 	router.GET("/api/proxies/recent", apiHandler.ListRecentProxies)
 	router.GET("/api/proxies/random", apiHandler.ListRandomProxies)
 	router.GET("/api/proxies/export/:format", apiHandler.ExportProxyList)
+	router.POST("/api/proxies/export/jobs", apiHandler.CreateExportJob)
+	router.GET("/api/proxies/export/jobs/:id", apiHandler.GetExportJob)
+	router.GET("/api/proxies/export/jobs/:id/download", apiHandler.DownloadExportJob)
 	router.GET("/api/v1/proxies", apiHandler.ListProxyListAuth)
 	router.GET("/api/facets/countries", apiHandler.ListProxyFacetsCountries)
 	router.GET("/api/facets/ports", apiHandler.ListProxyFacetsPorts)
@@ -125,6 +129,7 @@ func main() {
 			WebCacheTTL:    cfg.ProxyWebCacheTTL,
 			APICacheTTL:    cfg.ProxyAPICacheTTL,
 			RequestTimeout: 30 * time.Second,
+			AfterSync:      apiHandler.WarmProxyCaches,
 		}, storage, redisClient, geo)
 		go syncer.Start(syncCtx)
 	}

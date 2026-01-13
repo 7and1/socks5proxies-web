@@ -48,6 +48,13 @@ type Config struct {
 	OTelInsecure            bool
 	SlowRequestThreshold    time.Duration
 	WAFEnabled              bool
+	ExportDir               string
+	ExportJobTTL            time.Duration
+	MetricsToken            string
+	MetricsPublic           bool
+	MetricsAllowedIPs       []string
+	MetricsBasicUser        string
+	MetricsBasicPass        string
 }
 
 type RateLimitTier struct {
@@ -100,6 +107,13 @@ func Load() Config {
 		OTelServiceName:         getEnv("OTEL_SERVICE_NAME", "socks5proxies-api"),
 		OTelInsecure:            getEnvBool("OTEL_EXPORTER_OTLP_INSECURE", true),
 		SlowRequestThreshold:    getEnvDuration("SLOW_REQUEST_THRESHOLD", 2*time.Second),
+		ExportDir:               getEnv("EXPORT_DIR", "./data/exports"),
+		ExportJobTTL:            getEnvDuration("EXPORT_JOB_TTL", 2*time.Hour),
+		MetricsToken:            getEnv("METRICS_TOKEN", ""),
+		MetricsPublic:           getEnvBool("METRICS_PUBLIC", false),
+		MetricsAllowedIPs:       getEnvList("METRICS_ALLOWED_IPS", ""),
+		MetricsBasicUser:        getEnv("METRICS_BASIC_USER", ""),
+		MetricsBasicPass:        getEnv("METRICS_BASIC_PASS", ""),
 	}
 
 	cfg.RateLimitTiered = RateLimitTier{
@@ -128,9 +142,19 @@ func (c *Config) Validate() error {
 
 	// SECURITY: Enforce stricter CORS in production
 	if c.Environment == "production" {
-		if len(c.AllowedOrigins) == 1 && c.AllowedOrigins[0] == "*" {
-			log.Printf("[SECURITY] CRITICAL: Wildcard CORS origin in production - this is a security risk!")
-			log.Printf("[SECURITY] Set ALLOWED_ORIGINS to specific domains (e.g., https://socks5proxies.com,https://www.socks5proxies.com)")
+		if len(c.AllowedOrigins) == 0 {
+			return fmt.Errorf("ALLOWED_ORIGINS required in production")
+		}
+		for _, origin := range c.AllowedOrigins {
+			if origin == "*" {
+				return fmt.Errorf("ALLOWED_ORIGINS cannot include '*' in production")
+			}
+		}
+	}
+
+	if c.Environment == "production" && !c.MetricsPublic {
+		if len(c.MetricsAllowedIPs) == 0 && c.MetricsToken == "" && (c.MetricsBasicUser == "" || c.MetricsBasicPass == "") {
+			log.Printf("[SECURITY] metrics protected: configure METRICS_ALLOWED_IPS or METRICS_BASIC_USER/METRICS_BASIC_PASS to access /metrics")
 		}
 	}
 
@@ -177,6 +201,13 @@ func (c *Config) Validate() error {
 
 	if c.SlowRequestThreshold < 0 {
 		c.SlowRequestThreshold = 0
+	}
+
+	if c.ExportDir == "" {
+		c.ExportDir = "./data/exports"
+	}
+	if c.ExportJobTTL <= 0 {
+		c.ExportJobTTL = 2 * time.Hour
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ProxyListView } from "../../components/proxylist/ProxyListView";
 import { getProxyStats } from "../../lib/api-client";
+import { getProxyListRobots } from "../../lib/proxy-seo";
 
 function parseNumber(value: string | string[] | undefined) {
   if (!value) return undefined;
@@ -10,14 +11,17 @@ function parseNumber(value: string | string[] | undefined) {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const stats = await getProxyStats().catch(() => null);
+  const [stats, robots] = await Promise.all([
+    getProxyStats().catch(() => null),
+    getProxyListRobots({ protocol: "https" }),
+  ]);
   const total = stats?.data?.total;
   const countries = stats?.data?.countries;
   const totalLabel = total ? `${total.toLocaleString()}+` : "10,000+";
   const countriesLabel = countries ? `${countries}` : "100+";
 
   return {
-    title: `Free HTTPS Proxy List 2025 - ${totalLabel} Secure Proxies`,
+    title: `Free HTTPS Proxy List 2026 - ${totalLabel} Secure Proxies`,
     description: `Browse ${totalLabel} working HTTPS proxies across ${countriesLabel} countries. Filter by country, port, and anonymity level. Updated every few minutes.`,
     alternates: {
       canonical: "https://socks5proxies.com/https-proxy-list",
@@ -28,6 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
       url: "https://socks5proxies.com/https-proxy-list",
       type: "website",
     },
+    robots,
   };
 }
 
@@ -45,20 +50,48 @@ export default async function HttpsProxyListPage({
     ? searchParams.anonymity[0]
     : searchParams.anonymity;
 
+  const stats = await getProxyStats().catch(() => null);
+  const total = stats?.data?.total;
+  const totalLabel = total ? `${total.toLocaleString()}+` : "10,000+";
+
+  const datasetJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    name: "Socks5Proxies.com HTTPS Proxy List",
+    description: `Free HTTPS proxy list with ${totalLabel} working proxies. Filter by country, port, and anonymity level.`,
+    url: "https://socks5proxies.com/https-proxy-list",
+    creator: {
+      "@type": "Organization",
+      name: "Socks5Proxies.com",
+      url: "https://socks5proxies.com",
+    },
+    keywords: ["https proxies", "https proxy list", "free https proxy"],
+    provider: {
+      "@type": "Organization",
+      name: "Socks5Proxies.com",
+    },
+  };
+
   return (
-    <ProxyListView
-      title="Free HTTPS Proxy List"
-      description="Browse secure HTTPS proxies by country, port, and anonymity. Updated frequently with uptime and latency metrics."
-      basePath="/https-proxy-list"
-      filters={{
-        protocol: "https",
-        country,
-        anonymity,
-        port: parseNumber(searchParams.port),
-        limit: parseNumber(searchParams.limit),
-        offset: parseNumber(searchParams.offset),
-      }}
-      lockProtocol
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+      />
+      <ProxyListView
+        title="Free HTTPS Proxy List"
+        description="Browse secure HTTPS proxies by country, port, and anonymity. Updated frequently with uptime and latency metrics."
+        basePath="/https-proxy-list"
+        filters={{
+          protocol: "https",
+          country,
+          anonymity,
+          port: parseNumber(searchParams.port),
+          limit: parseNumber(searchParams.limit),
+          offset: parseNumber(searchParams.offset),
+        }}
+        lockProtocol
+      />
+    </>
   );
 }

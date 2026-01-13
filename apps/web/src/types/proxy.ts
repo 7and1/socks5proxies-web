@@ -32,6 +32,7 @@ export interface ProxyListResponse {
     offset: number;
     cached: boolean;
     cache_age: number;
+    last_sync?: string;
   };
 }
 

@@ -13,30 +13,38 @@ import { ProtocolCards } from "../../components/proxylist/ProtocolCards";
 import { CountryGrid } from "../../components/proxylist/CountryGrid";
 import { LiveUpdateBadge } from "../../components/shared/LiveUpdateBadge";
 
-export const metadata: Metadata = {
-  title: "Free Proxy List 2025 - Live SOCKS5, HTTP & HTTPS Proxies",
-  description:
-    "Browse a live free proxy list with real-time uptime, latency, and anonymity data. Filter by country, protocol, and port. Updated every few minutes.",
-  keywords: [
-    "free proxy list",
-    "free socks5 proxy list",
-    "free http proxy",
-    "free https proxy",
-    "working proxy list",
-    "proxy list by country",
-    "fresh proxies",
-  ],
-  alternates: {
-    canonical: "https://socks5proxies.com",
-  },
-  openGraph: {
-    title: "Free Proxy List - Live SOCKS5, HTTP & HTTPS Proxies",
-    description:
-      "Browse live proxy servers with uptime, latency, and anonymity filters. Updated every few minutes.",
-    url: "https://socks5proxies.com",
-    type: "website",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const stats = await getProxyStats().catch(() => null);
+  const total = stats?.data?.total;
+  const countries = stats?.data?.countries;
+  const avgUptime = stats?.data?.avg_uptime;
+  const totalLabel = total ? `${total.toLocaleString()}+` : "10,000+";
+  const countriesLabel = countries ? `${countries}` : "100+";
+  const uptimeLabel = avgUptime ? `${avgUptime.toFixed(1)}%` : "95%";
+
+  return {
+    title: `Free Proxy List 2026 - ${totalLabel} Live SOCKS5, HTTP & HTTPS Proxies`,
+    description: `Browse ${totalLabel} live free proxies across ${countriesLabel} countries with real-time uptime, latency, and anonymity data. Filter by country, protocol, and port. Average uptime: ${uptimeLabel}.`,
+    keywords: [
+      "free proxy list",
+      "free socks5 proxy list",
+      "free http proxy",
+      "free https proxy",
+      "working proxy list",
+      "proxy list by country",
+      "fresh proxies",
+    ],
+    alternates: {
+      canonical: "https://socks5proxies.com",
+    },
+    openGraph: {
+      title: `Free Proxy List - ${totalLabel} Live SOCKS5, HTTP & HTTPS Proxies`,
+      description: `Browse ${totalLabel} live proxy servers with uptime, latency, and anonymity filters. Average uptime: ${uptimeLabel}. Updated every few minutes.`,
+      url: "https://socks5proxies.com",
+      type: "website",
+    },
+  };
+}
 
 export default async function HomePage() {
   const [statsResponse, recentResponse, countryFacets, protocolFacets] =
@@ -64,8 +72,7 @@ export default async function HomePage() {
     "@context": "https://schema.org",
     "@type": "Dataset",
     name: "Socks5Proxies.com Free Proxy List",
-    description:
-      "Public proxy dataset with country, port, protocol, anonymity, and uptime metrics.",
+    description: `Free proxy list with ${totalLabel} working proxies across ${countryLabel} countries. Includes country, port, protocol, anonymity, and uptime metrics.`,
     url: "https://socks5proxies.com/free-proxy-list",
     creator: {
       "@type": "Organization",
@@ -73,6 +80,31 @@ export default async function HomePage() {
       url: "https://socks5proxies.com",
     },
     keywords: ["free proxies", "socks5", "http proxies", "proxy list"],
+    provider: {
+      "@type": "Organization",
+      name: "Socks5Proxies.com",
+      url: "https://socks5proxies.com",
+    },
+    distribution: {
+      "@type": "DataDownload",
+      encodingFormat: "application/json",
+      contentUrl: "https://api.socks5proxies.com/api/proxies",
+    },
+    temporalCoverage: "2026/2026",
+    spatialCoverage: {
+      "@type": "Place",
+      name: "Worldwide",
+    },
+  };
+
+  const organizationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Socks5Proxies.com",
+    url: "https://socks5proxies.com",
+    description:
+      "Free proxy list with real-time validation, uptime monitoring, and multi-protocol support.",
+    sameAs: [],
   };
 
   return (
@@ -80,6 +112,10 @@ export default async function HomePage() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
       />
       {/* Hero Section */}
       <section

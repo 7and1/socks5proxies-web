@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ProxyListView } from "../../../../components/proxylist/ProxyListView";
 import { getASNDetails } from "../../../../lib/api-client";
+import { getProxyListRobots } from "../../../../lib/proxy-seo";
 
 function parseNumber(value: string | string[] | undefined) {
   if (!value) return undefined;
@@ -10,12 +11,16 @@ function parseNumber(value: string | string[] | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function generateMetadata({
+export async function generateMetadata({
   params,
 }: {
   params: { asn: string };
-}): Metadata {
+}): Promise<Metadata> {
   const canonicalUrl = `https://socks5proxies.com/free-proxy-list/asn/${params.asn}`;
+  const asnNumber = Number(params.asn);
+  const robots = await getProxyListRobots({
+    asn: Number.isFinite(asnNumber) ? asnNumber : undefined,
+  });
   return {
     title: `Free Proxies from ASN ${params.asn} - SOCKS5, HTTP & HTTPS Servers`,
     description: `Browse free proxy servers from ASN ${params.asn}. Filter by country, SOCKS5, HTTP, HTTPS protocol, port, and anonymity level. Updated every few minutes.`,
@@ -49,6 +54,7 @@ export function generateMetadata({
       title: `Free Proxies from ASN ${params.asn}`,
       description: `Browse free proxy servers from ASN ${params.asn}. Filter by country, protocol, port, and anonymity.`,
     },
+    robots,
   };
 }
 

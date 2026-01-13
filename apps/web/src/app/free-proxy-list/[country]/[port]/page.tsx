@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ProxyListView } from "../../../../components/proxylist/ProxyListView";
+import { getProxyListRobots } from "../../../../lib/proxy-seo";
 
 function parseNumber(value: string | string[] | undefined) {
   if (!value) return undefined;
@@ -8,18 +9,24 @@ function parseNumber(value: string | string[] | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function generateMetadata({
+export async function generateMetadata({
   params,
 }: {
   params: { country: string; port: string };
-}): Metadata {
+}): Promise<Metadata> {
   const country = params.country.toUpperCase();
+  const portNumber = Number(params.port);
+  const robots = await getProxyListRobots({
+    country,
+    port: Number.isFinite(portNumber) ? portNumber : undefined,
+  });
   return {
     title: `Free ${country} Proxies on Port ${params.port}`,
     description: `Free proxy list filtered by ${country} and port ${params.port}. Updated frequently with latency and uptime metrics.`,
     alternates: {
       canonical: `https://socks5proxies.com/free-proxy-list/${params.country}/${params.port}`,
     },
+    robots,
   };
 }
 

@@ -1,28 +1,32 @@
 # Build stage
 FROM node:20-slim AS builder
 
-# Install build dependencies for native modules
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+# Install pnpm and build dependencies
+RUN apt-get update && \
+    apt-get install -y python3 make g++ curl && \
+    corepack enable && \
+    corepack prepare pnpm@latest --activate && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy package files
-COPY apps/web/package.json apps/web/package-lock.json ./
+COPY apps/web/package.json ./
 
 # Install dependencies
-RUN npm ci
+RUN pnpm install --frozen-lockfile=false
 
 # Copy source code
 COPY apps/web/ ./
 
 # Build application
-RUN npm run build
+RUN pnpm build
 
 # Production stage
 FROM node:20-slim AS production
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install curl + build deps for sharp (cleaned up after install)
+RUN apt-get update && apt-get install -y curl python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -39,7 +43,13 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./
 
 # CRITICAL: Reinstall sharp for production (linux platform)
-RUN npm install --os=linux --cpu=x64 sharp
+# Use build deps above to allow a source build fallback if prebuilt downloads fail.
+RUN corepack enable && \
+    corepack prepare pnpm@latest --activate && \
+    pnpm add --os=linux --cpu=x64 sharp && \
+    apt-get purge -y python3 make g++ && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set ownership
 RUN chown -R nextjs:nodejs /app

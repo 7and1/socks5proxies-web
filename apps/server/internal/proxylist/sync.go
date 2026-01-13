@@ -20,6 +20,7 @@ type SyncConfig struct {
 	WebCacheTTL    time.Duration
 	APICacheTTL    time.Duration
 	RequestTimeout time.Duration
+	AfterSync      func(context.Context)
 }
 
 type Syncer struct {
@@ -109,6 +110,12 @@ func (s *Syncer) sync(ctx context.Context) error {
 		// Invalidate stats cache to ensure fresh data
 		pipe.Del(ctx, "proxylist:stats")
 		_, _ = pipe.Exec(ctx)
+	}
+
+	if s.config.AfterSync != nil {
+		afterCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		s.config.AfterSync(afterCtx)
+		cancel()
 	}
 
 	log.Printf("[proxylist] synced %d/%d records in %s", updated, processed, time.Since(start))

@@ -39,7 +39,8 @@ func NewRouter(cfg config.Config) *gin.Engine {
 		})
 	})
 
-	router.GET("/metrics", MetricsHandler())
+	router.GET("/metrics", MetricsHandler(cfg))
 
 	return router
 }
+

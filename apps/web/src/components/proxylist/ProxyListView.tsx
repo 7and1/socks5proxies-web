@@ -1,11 +1,13 @@
+import { memo } from "react";
 import { getFacets, getProxyList } from "../../lib/api-client";
 import type { FacetItem, ProxyListResponse } from "../../types/proxy";
 import { DEFAULT_PAGE_SIZE } from "../../config/proxy-constants";
-import { ProxyFilters } from "./ProxyFilters";
-import { ProxyPagination } from "./ProxyPagination";
-import { FacetLinks } from "./FacetLinks";
-import { ProxyListInteractive } from "./ProxyListInteractive";
+import ProxyFilters from "./ProxyFilters";
+import ProxyPagination from "./ProxyPagination";
+import FacetLinks from "./FacetLinks";
+import ProxyListInteractive from "./ProxyListInteractive";
 import { LiveUpdateBadge } from "../shared/LiveUpdateBadge";
+import { formatRelativeTime } from "../../lib/format";
 
 interface ProxyListViewProps {
   title: string;
@@ -123,7 +125,7 @@ export async function ProxyListView({
   );
 }
 
-function ProxyListContent({
+function ProxyListContentComponent({
   title,
   description,
   basePath,
@@ -163,6 +165,9 @@ function ProxyListContent({
     asn: filters.asn,
     limit,
   };
+  const lastSyncLabel = response.meta.last_sync
+    ? formatRelativeTime(response.meta.last_sync)
+    : "";
 
   return (
     <section className="space-y-8">
@@ -182,9 +187,10 @@ function ProxyListContent({
               <div className="font-semibold">Dataset Snapshot</div>
               <LiveUpdateBadge ageSeconds={response.meta.cache_age} />
             </div>
-            <div className="mt-1">
-              {response.meta.total.toLocaleString()} proxies • cached{" "}
-              {response.meta.cache_age}s ago
+            <div className="mt-1 flex flex-wrap gap-2">
+              <span>{response.meta.total.toLocaleString()} proxies</span>
+              <span>• cached {response.meta.cache_age}s ago</span>
+              {lastSyncLabel ? <span>• last sync {lastSyncLabel}</span> : null}
             </div>
           </div>
         </div>
@@ -236,3 +242,5 @@ function ProxyListContent({
     </section>
   );
 }
+
+const ProxyListContent = memo(ProxyListContentComponent);

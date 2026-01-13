@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ProxyListView } from "../../../../../components/proxylist/ProxyListView";
+import { getProxyListRobots } from "../../../../../lib/proxy-seo";
 
 function parseNumber(value: string | string[] | undefined) {
   if (!value) return undefined;
@@ -8,14 +9,18 @@ function parseNumber(value: string | string[] | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export function generateMetadata({
+export async function generateMetadata({
   params,
 }: {
   params: { country: string; city: string };
-}): Metadata {
+}): Promise<Metadata> {
   const country = params.country.toUpperCase();
   const city = decodeURIComponent(params.city);
   const canonicalUrl = `https://socks5proxies.com/free-proxy-list/city/${params.country}/${encodeURIComponent(city)}`;
+  const robots = await getProxyListRobots({
+    country,
+    city,
+  });
   return {
     title: `Free ${city} Proxies (${country}) - SOCKS5, HTTP & HTTPS Servers`,
     description: `Browse free proxy servers in ${city}, ${country}. Filter by SOCKS5, HTTP, HTTPS protocol, port, and anonymity level. Updated every few minutes with uptime metrics.`,
@@ -50,6 +55,7 @@ export function generateMetadata({
       title: `Free ${city} Proxies (${country})`,
       description: `Browse free proxy servers in ${city}, ${country}. Filter by protocol, port, and anonymity.`,
     },
+    robots,
   };
 }
 

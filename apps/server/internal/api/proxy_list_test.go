@@ -1,10 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,6 +195,55 @@ func TestListProxyListPublic_WithFilters(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestListProxyListPublic_ETagNotModified(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockStore := &mockProxyListStore{
+		records: []store.ProxyListRecord{
+			{
+				IP:          "192.168.1.1",
+				Port:        8080,
+				Host:        "proxy1.example.com",
+				CountryCode: "US",
+				CountryName: "United States",
+				HTTP:        1,
+				Anon:        4,
+				ChecksUp:    90,
+				ChecksDown:  10,
+				LastSeen:    time.Now(),
+			},
+		},
+		total: 1,
+	}
+
+	h := newTestHandler(mockStore, nil)
+
+	router := gin.New()
+	router.GET("/api/proxies", h.ListProxyListPublic)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/proxies", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	etag := rec.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header to be set")
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/proxies", nil)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusNotModified {
+		t.Fatalf("expected status 304, got %d", rec2.Code)
 	}
 }
 
@@ -437,6 +488,166 @@ func TestListProxyFacets_NoProxyStore(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status 503, got %d", rec.Code)
+	}
+}
+
+func TestExportProxyList_Text(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockStore := &mockProxyListStore{
+		records: []store.ProxyListRecord{
+			{
+				IP:       "203.0.113.10",
+				Port:     1080,
+				Host:     "proxy.example",
+				HTTP:     1,
+				Socks5:   1,
+				ChecksUp: 5,
+			},
+		},
+		total: 1,
+	}
+
+	h := newTestHandler(mockStore, nil)
+	router := gin.New()
+	router.GET("/api/proxies/export/:format", h.ExportProxyList)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/proxies/export/txt", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "203.0.113.10:1080") {
+		t.Fatalf("expected exported list to include proxy address")
+	}
+}
+
+func TestExportProxyList_StreamCSV(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockStore := &mockProxyListStore{
+		records: []store.ProxyListRecord{
+			{IP: "203.0.113.10", Port: 1080, Host: "proxy.example"},
+			{IP: "203.0.113.11", Port: 1081, Host: "proxy.example"},
+		},
+		total: 2,
+	}
+
+	h := newTestHandler(mockStore, nil)
+	router := gin.New()
+	router.GET("/api/proxies/export/:format", h.ExportProxyList)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/proxies/export/csv?stream=1&limit=2&page_size=1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "ip,port,country_code") {
+		t.Fatalf("expected csv header in response")
+	}
+	if !strings.Contains(body, "203.0.113.10") {
+		t.Fatalf("expected first proxy in response")
+	}
+}
+
+func TestExportProxyList_AsyncJob(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockStore := &mockProxyListStore{
+		records: []store.ProxyListRecord{
+			{IP: "203.0.113.10", Port: 1080, Host: "proxy.example"},
+		},
+		total: 1,
+	}
+
+	cfg := config.Config{
+		ExportDir:    t.TempDir(),
+		ExportJobTTL: time.Minute,
+	}
+
+	unifiedStore := &mockUnifiedStore{mockProxyListStore: mockStore}
+
+	h := &Handler{
+		cfg:                cfg,
+		store:              unifiedStore,
+		proxyStore:         mockStore,
+		exportManager:      NewExportManager(cfg, mockStore, nil),
+		apiLimit:           100,
+		apiRateLimitWindow: time.Hour,
+	}
+
+	router := gin.New()
+	router.POST("/api/proxies/export/jobs", h.CreateExportJob)
+	router.GET("/api/proxies/export/jobs/:id", h.GetExportJob)
+	router.GET("/api/proxies/export/jobs/:id/download", h.DownloadExportJob)
+
+	payload := []byte(`{"format":"csv","limit":1,"page_size":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/proxies/export/jobs", bytes.NewBuffer(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	data, ok := response["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data object in response")
+	}
+	jobID, ok := data["id"].(string)
+	if !ok || jobID == "" {
+		t.Fatalf("expected job id in response")
+	}
+
+	var status string
+	for i := 0; i < 50; i++ {
+		statusReq := httptest.NewRequest(http.MethodGet, "/api/proxies/export/jobs/"+jobID, nil)
+		statusRec := httptest.NewRecorder()
+		router.ServeHTTP(statusRec, statusReq)
+		if statusRec.Code != http.StatusOK {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+
+		var statusPayload map[string]any
+		if err := json.Unmarshal(statusRec.Body.Bytes(), &statusPayload); err != nil {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		jobData, ok := statusPayload["data"].(map[string]any)
+		if !ok {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
+		status, _ = jobData["status"].(string)
+		if status == string(exportJobCompleted) || status == string(exportJobFailed) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if status != string(exportJobCompleted) {
+		t.Fatalf("expected job completed, got %s", status)
+	}
+
+	downloadReq := httptest.NewRequest(http.MethodGet, "/api/proxies/export/jobs/"+jobID+"/download", nil)
+	downloadRec := httptest.NewRecorder()
+	router.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("expected download status 200, got %d", downloadRec.Code)
+	}
+	if !strings.Contains(downloadRec.Body.String(), "ip,port") {
+		t.Fatalf("expected csv download content")
 	}
 }
 

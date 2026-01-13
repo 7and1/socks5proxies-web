@@ -41,3 +41,4 @@ apps/server/*.db-wal
 .wrangler/
 .dev.vars
 .vercel/
+.open-next

@@ -26,6 +26,7 @@ type Handler struct {
 	apiKeys            []string
 	apiRateLimitWindow time.Duration
 	apiLimit           int
+	exportManager      *ExportManager
 }
 
 func NewHandler(cfg config.Config, st store.Storer, redis *redis.Client) *Handler {
@@ -38,12 +39,13 @@ func NewHandler(cfg config.Config, st store.Storer, redis *redis.Client) *Handle
 		FreeLimit:      cfg.APIRateLimitHour,
 		BasicLimit:     cfg.APIRateLimitHour * 10,
 		ProLimit:       cfg.APIRateLimitHour * 100,
-		WindowDuration: time.Hour,
+		WindowDuration: cfg.APIRateLimitWindow,
 	})
 	var proxyStore store.ProxyListStore
 	if ps, ok := st.(store.ProxyListStore); ok {
 		proxyStore = ps
 	}
+	exportManager := NewExportManager(cfg, proxyStore, redis)
 
 	return &Handler{
 		cfg:                cfg,
@@ -53,8 +55,9 @@ func NewHandler(cfg config.Config, st store.Storer, redis *redis.Client) *Handle
 		limiter:            limiter,
 		apiLimiter:         apiLimiter,
 		apiKeys:            cfg.APIKeys,
-		apiRateLimitWindow: time.Hour,
+		apiRateLimitWindow: cfg.APIRateLimitWindow,
 		apiLimit:           cfg.APIRateLimitHour,
+		exportManager:      exportManager,
 	}
 }
 

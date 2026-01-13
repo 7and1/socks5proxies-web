@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Github, Twitter, Mail } from "lucide-react";
 import { site } from "../../config/site";
+import { proxyGrid } from "../../config/proxy-grid";
 
 const footerLinks = {
   tools: [
@@ -54,6 +55,28 @@ export function Footer() {
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-ink-muted dark:text-sand-400">
             {site.description}
           </p>
+          <div className="mt-6 rounded-2xl border border-sand-200 bg-white/80 p-4 text-xs text-ink-muted dark:border-sand-700 dark:bg-sand-900/70 dark:text-sand-400">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-ink dark:text-sand-200">
+              Proxy Grid API
+            </p>
+            <ul className="mt-2 space-y-2 text-xs">
+              {proxyGrid.highlights.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-ocean-500" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-[11px]">
+              Base URL: <span className="font-mono">{proxyGrid.baseUrl}</span>
+            </p>
+            <Link
+              href="/docs/api"
+              className="mt-3 inline-flex items-center gap-2 text-[11px] font-semibold text-ocean-700 hover:text-ocean-600 dark:text-ocean-400 dark:hover:text-ocean-300"
+            >
+              View API details
+            </Link>
+          </div>
 
           {/* Social Links */}
           <div className="mt-6 flex items-center gap-3">

@@ -21,8 +21,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /bin/serv
 # Production stage - Alpine for SQLite file system access
 FROM alpine:3.20
 
-# Install ca-certificates for HTTPS and wget for healthcheck
-RUN apk add --no-cache ca-certificates wget
+# Install ca-certificates for HTTPS, wget for healthcheck, su-exec for privilege drop
+RUN apk add --no-cache ca-certificates wget su-exec
 
 # Create non-root user
 RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser
@@ -30,8 +30,11 @@ RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser
 # Create data directory
 RUN mkdir -p /data && chown appuser:appgroup /data
 
-# Copy binary from builder
+# Copy binary and entrypoint
 COPY --from=builder /bin/server /bin/server
+COPY ./docker-entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
 
 ENV PORT=8080
 ENV GIN_MODE=release
@@ -42,6 +45,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD wget -q -O /dev/null http://localhost:8080/api/health || exit 1
 
-USER appuser:appgroup
-
-ENTRYPOINT ["/bin/server"]
+ENTRYPOINT ["/entrypoint.sh"]

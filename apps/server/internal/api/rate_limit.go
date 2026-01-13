@@ -104,3 +104,63 @@ func selectLimiter(path string, cfg config.Config, limits APILimiters) (*rate.Li
 		return limits.Light, cfg.APIRateLimitLight, "light"
 	}
 }
+
+// RequireAPIKey creates middleware that requires valid API key authentication.
+// Protected endpoints skip rate limiting since API keys represent trusted access.
+func RequireAPIKey(apiKeys []string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if len(apiKeys) == 0 {
+			RespondError(c, http.StatusServiceUnavailable, "API_KEYS_NOT_CONFIGURED", "api keys not configured", nil)
+			c.Abort()
+			return
+		}
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing api key", nil)
+			c.Abort()
+			return
+		}
+
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authorization format", nil)
+			c.Abort()
+			return
+		}
+
+		token := strings.TrimSpace(authHeader[7:])
+		if token == "" {
+			RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing api key", nil)
+			c.Abort()
+			return
+		}
+
+		valid := false
+		for _, key := range apiKeys {
+			if key != "" && constantTimeCompare(token, key) {
+				valid = true
+				break
+			}
+		}
+
+		if !valid {
+			RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid api key", nil)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// constantTimeCompare performs constant-time string comparison to prevent timing attacks.
+func constantTimeCompare(x, y string) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	result := byte(0)
+	for i := 0; i < len(x); i++ {
+		result |= x[i] ^ y[i]
+	}
+	return result == 0
+}

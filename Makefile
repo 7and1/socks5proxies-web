@@ -7,7 +7,7 @@
 PROJECT_NAME := socksproxies
 
 # Docker compose command
-COMPOSE := docker-compose
+COMPOSE := docker compose
 
 ## help: Show this help message
 help:
@@ -83,7 +83,7 @@ ps:
 ## validate: Validate Docker configuration
 validate:
 	@echo "Validating docker-compose.yml..."
-	docker-compose config > /dev/null
+	docker compose config > /dev/null
 	@echo "Configuration is valid."
 
 ## shell-api: Open shell in API container
@@ -153,3 +153,43 @@ lint-server:
 ## ci: Run CI checks (build, test, lint)
 ci: build-web build-server test-web test-server lint-web lint-server
 	@echo "CI checks passed."
+
+## ============================================
+## Cloudflare Deployment
+## ============================================
+
+## cf-build: Build for Cloudflare Pages/Workers
+cf-build:
+	@echo "Building frontend for Cloudflare..."
+	cd apps/web && pnpm build:cloudflare
+
+## cf-dev: Local development with Wrangler
+cf-dev:
+	@echo "Starting Cloudflare Workers dev server..."
+	cd apps/web && pnpm preview
+
+## cf-deploy: Deploy to Cloudflare Pages/Workers
+cf-deploy:
+	@echo "Deploying to Cloudflare..."
+	@echo "Ensure CLOUDFLARE_ACCOUNT_ID is set"
+	cd apps/web && pnpm deploy
+
+## cf-deploy-root: Deploy from root wrangler.toml
+cf-deploy-root:
+	@echo "Deploying to Cloudflare (root config)..."
+	@echo "Ensure CLOUDFLARE_ACCOUNT_ID is set"
+	wrangler deploy
+
+## cf-logs: Tail Cloudflare Workers logs
+cf-logs:
+	wrangler tail --format pretty
+
+## cf-secrets: List Cloudflare secrets
+cf-secrets:
+	wrangler secret list
+
+## cf-secret: Set a Cloudflare secret (usage: make cf-secret NAME=SECRET_NAME)
+cf-secret:
+	@echo "Setting secret: $(NAME)"
+	@echo "Value will be prompted for..."
+	wrangler secret put $(NAME)

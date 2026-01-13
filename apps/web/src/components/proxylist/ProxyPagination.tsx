@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { memo } from "react";
 
 interface ProxyPaginationProps {
   basePath: string;
@@ -8,7 +9,7 @@ interface ProxyPaginationProps {
   query: Record<string, string | number | undefined>;
 }
 
-export function ProxyPagination({
+function ProxyPagination({
   basePath,
   limit,
   offset,
@@ -74,3 +75,5 @@ export function ProxyPagination({
     </div>
   );
 }
+
+export default memo(ProxyPagination);

@@ -11,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const countriesLabel = countries ? `${countries}` : "100+";
 
   return {
-    title: `Free Proxy List 2025 - ${totalLabel} Working SOCKS5, HTTP Proxies`,
+    title: `Free Proxy List 2026 - ${totalLabel} Working SOCKS5, HTTP Proxies`,
     description: `Browse our free proxy list with ${totalLabel} working proxies across ${countriesLabel} countries. Filter by SOCKS5, HTTP, HTTPS, port, and anonymity level. Updated every few minutes.`,
     keywords: [
       "free proxy list",
@@ -31,7 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
       canonical: "https://socks5proxies.com/free-proxy-list",
     },
     openGraph: {
-      title: `Free Proxy List 2025 - ${totalLabel} Working Proxies`,
+      title: `Free Proxy List 2026 - ${totalLabel} Working Proxies`,
       description: `Browse a live free proxy list with ${totalLabel} working proxies across ${countriesLabel} countries. Filter by protocol, port, and anonymity.`,
       url: "https://socks5proxies.com/free-proxy-list",
       siteName: "Socks5Proxies.com",

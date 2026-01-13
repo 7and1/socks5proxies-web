@@ -1,4 +1,4 @@
-name: Deploy to Cloudflare Pages
+name: Deploy to Cloudflare Pages/Workers
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "apps/web/**"
+      - "wrangler.toml"
       - ".github/workflows/deploy-cloudflare.yml"
   workflow_dispatch:
 
@@ -27,19 +28,18 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        working-directory: apps/web
         run: pnpm install --frozen-lockfile
 
       - name: Build with OpenNext
-        working-directory: apps/web
-        run: pnpm build:cloudflare
+        run: cd apps/web && pnpm build:cloudflare
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.socks5proxies.com' }}
+          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://api.socks5proxies.com/ws' }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://socks5proxies.com' }}
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/web
-          command: deploy
+          command: wrangler deploy --config wrangler.toml
