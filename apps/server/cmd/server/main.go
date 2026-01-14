@@ -128,6 +128,7 @@ func main() {
 			SyncInterval:   cfg.ProxySyncInterval,
 			WebCacheTTL:    cfg.ProxyWebCacheTTL,
 			APICacheTTL:    cfg.ProxyAPICacheTTL,
+			Retention:      time.Duration(cfg.ProxyRetentionHours) * time.Hour,
 			RequestTimeout: 30 * time.Second,
 			AfterSync:      apiHandler.WarmProxyCaches,
 		}, storage, redisClient, geo)

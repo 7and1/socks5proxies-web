@@ -11,6 +11,7 @@ import (
 
 type ProxyListStore interface {
 	UpsertProxyListBatch(ctx context.Context, records []ProxyListRecord) (int, error)
+	DeleteStaleProxies(ctx context.Context, cutoff time.Time) (int, error)
 	ListProxyList(ctx context.Context, filters ProxyListFilters) ([]ProxyListRecord, int, error)
 	ListRecentProxies(ctx context.Context, limit int) ([]ProxyListRecord, error)
 	ListRandomProxies(ctx context.Context, limit int) ([]ProxyListRecord, error)
@@ -31,6 +32,7 @@ type ProxyListFilters struct {
 	ASN         int
 	Limit       int
 	Offset      int
+	Since       time.Time
 }
 
 type ProxyListRecord struct {
@@ -210,6 +212,21 @@ func (s *Store) UpsertProxyListBatch(ctx context.Context, records []ProxyListRec
 		return updated, err
 	}
 	return updated, nil
+}
+
+func (s *Store) DeleteStaleProxies(ctx context.Context, cutoff time.Time) (int, error) {
+	if cutoff.IsZero() {
+		return 0, nil
+	}
+	result, err := s.DB.ExecContext(ctx, `DELETE FROM proxy_list WHERE last_seen < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
 }
 
 func (s *Store) ListProxyList(ctx context.Context, filters ProxyListFilters) ([]ProxyListRecord, int, error) {
@@ -772,6 +789,10 @@ func buildProxyListWhere(filters ProxyListFilters) (string, []interface{}) {
 				args = append(args, val)
 			}
 		}
+	}
+	if !filters.Since.IsZero() {
+		clauses = append(clauses, "last_seen >= ?")
+		args = append(args, filters.Since)
 	}
 
 	return "WHERE " + strings.Join(clauses, " AND "), args

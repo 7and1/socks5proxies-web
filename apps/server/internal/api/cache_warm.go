@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +29,11 @@ func (h *Handler) WarmProxyCaches(ctx context.Context) {
 	defer cancel()
 
 	lastSync := loadLastSyncTimestamp(warmCtx, h.redis)
+	version := loadProxyCacheVersion(warmCtx, h.redis)
+	if version == "0" {
+		version = strconv.FormatInt(time.Now().UTC().Unix(), 10)
+		_ = h.redis.Set(warmCtx, "proxylist:version", version, 0).Err()
+	}
 
 	// Stats cache
 	if stats, err := h.proxyStore.GetProxyStats(warmCtx); err == nil {
@@ -45,7 +49,7 @@ func (h *Handler) WarmProxyCaches(ctx context.Context) {
 			"meta": meta,
 		}
 		if raw, err := json.Marshal(payload); err == nil {
-			_ = h.redis.Set(warmCtx, "proxylist:stats", raw, time.Minute).Err()
+			_ = h.redis.Set(warmCtx, buildProxyStatsCacheKey(version), raw, time.Minute).Err()
 		}
 	}
 
@@ -68,7 +72,7 @@ func (h *Handler) WarmProxyCaches(ctx context.Context) {
 			"meta": meta,
 		}
 		if raw, err := json.Marshal(payload); err == nil {
-			key := fmt.Sprintf("proxylist:recent:%d", warmRecentLimit)
+			key := buildProxyRecentCacheKey(warmRecentLimit, version)
 			_ = h.redis.Set(warmCtx, key, raw, 30*time.Second).Err()
 		}
 	}
@@ -92,6 +96,9 @@ func (h *Handler) WarmProxyCaches(ctx context.Context) {
 			CountryCode: code,
 			Limit:       warmPageLimit,
 			Offset:      0,
+		}
+		if h.cfg.ProxyListWindowHours > 0 {
+			filters.Since = time.Now().UTC().Add(-time.Duration(h.cfg.ProxyListWindowHours) * time.Hour)
 		}
 		records, total, err := h.proxyStore.ListProxyList(warmCtx, filters)
 		if err != nil {
@@ -119,7 +126,7 @@ func (h *Handler) WarmProxyCaches(ctx context.Context) {
 			Meta: meta,
 		}
 		if raw, err := json.Marshal(payload); err == nil {
-			cacheKey := buildProxyCacheKey(filters, false)
+			cacheKey := buildProxyCacheKey(filters, false, version)
 			_ = h.redis.Set(warmCtx, cacheKey, raw, cacheTTL).Err()
 		}
 	}
@@ -152,6 +159,17 @@ func loadLastSyncTimestamp(ctx context.Context, redisClient redisClient) time.Ti
 		return time.Time{}
 	}
 	return time.Unix(ts, 0).UTC()
+}
+
+func loadProxyCacheVersion(ctx context.Context, redisClient redisClient) string {
+	if redisClient == nil {
+		return "0"
+	}
+	version, err := redisClient.Get(ctx, "proxylist:version").Result()
+	if err != nil || version == "" {
+		return "0"
+	}
+	return version
 }
 
 // redisClient is a narrow interface for testing / dependency isolation.

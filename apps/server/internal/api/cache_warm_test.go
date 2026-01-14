@@ -149,7 +149,8 @@ func TestWarmCacheEndpoint_Success(t *testing.T) {
 
 	// Verify cache was populated
 	ctx := context.Background()
-	statsKey := "proxylist:stats"
+	version, _ := redisClient.Get(ctx, "proxylist:version").Result()
+	statsKey := buildProxyStatsCacheKey(version)
 	if exists, _ := redisClient.Exists(ctx, statsKey).Result(); exists == 0 {
 		t.Error("expected stats cache to be set")
 	}

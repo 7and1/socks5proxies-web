@@ -109,6 +109,18 @@ func (s *PostgresStore) UpsertProxyListBatch(ctx context.Context, records []Prox
 	return updated, nil
 }
 
+func (s *PostgresStore) DeleteStaleProxies(ctx context.Context, cutoff time.Time) (int, error) {
+	if cutoff.IsZero() {
+		return 0, nil
+	}
+	query := fmt.Sprintf(`DELETE FROM %s.proxy_list WHERE last_seen < $1`, s.QuoteSchema())
+	result, err := s.DB.Exec(ctx, query, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return int(result.RowsAffected()), nil
+}
+
 func (s *PostgresStore) ListProxyList(ctx context.Context, filters ProxyListFilters) ([]ProxyListRecord, int, error) {
 	whereClause, args := buildProxyListWherePostgres(filters, 1)
 
@@ -880,6 +892,11 @@ func buildProxyListWherePostgres(filters ProxyListFilters, startIndex int) (stri
 			}
 			clauses = append(clauses, fmt.Sprintf("anon IN (%s)", strings.Join(placeholders, ",")))
 		}
+	}
+	if !filters.Since.IsZero() {
+		clauses = append(clauses, fmt.Sprintf("last_seen >= $%d", index))
+		args = append(args, filters.Since)
+		index++
 	}
 
 	return "WHERE " + strings.Join(clauses, " AND "), args

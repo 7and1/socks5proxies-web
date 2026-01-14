@@ -19,6 +19,7 @@ type SyncConfig struct {
 	SyncInterval   time.Duration
 	WebCacheTTL    time.Duration
 	APICacheTTL    time.Duration
+	Retention      time.Duration
 	RequestTimeout time.Duration
 	AfterSync      func(context.Context)
 }
@@ -99,6 +100,16 @@ func (s *Syncer) sync(ctx context.Context) error {
 		return err
 	}
 
+	if s.config.Retention > 0 {
+		cutoff := time.Now().UTC().Add(-s.config.Retention)
+		deleted, err := s.store.DeleteStaleProxies(ctx, cutoff)
+		if err != nil {
+			return err
+		}
+		recordPurge(deleted)
+		log.Printf("[proxylist] purge complete: %d rows older than %s", deleted, s.config.Retention)
+	}
+
 	if err := s.store.RebuildProxyFacets(ctx); err != nil {
 		return err
 	}
@@ -106,9 +117,9 @@ func (s *Syncer) sync(ctx context.Context) error {
 	if s.redis != nil {
 		// Performance: Invalidate cached data and update sync timestamp
 		pipe := s.redis.Pipeline()
-		pipe.Set(ctx, "proxylist:last_sync", time.Now().UTC().Unix(), 0)
-		// Invalidate stats cache to ensure fresh data
-		pipe.Del(ctx, "proxylist:stats")
+		now := time.Now().UTC().Unix()
+		pipe.Set(ctx, "proxylist:last_sync", now, 0)
+		pipe.Set(ctx, "proxylist:version", now, 0)
 		_, _ = pipe.Exec(ctx)
 	}
 

@@ -25,6 +25,9 @@ type Config struct {
 	ProxySyncInterval       time.Duration
 	ProxyWebCacheTTL        time.Duration
 	ProxyAPICacheTTL        time.Duration
+	ProxyListWindowHours    int
+	ProxyStatsWindowHours   int
+	ProxyRetentionHours     int
 	APIKeys                 []string
 	APIRateLimitHour        int
 	APIRateLimitWindow      time.Duration
@@ -86,6 +89,9 @@ func Load() Config {
 		ProxySyncInterval:       getEnvDuration("PROXY_SYNC_INTERVAL", 5*time.Minute),
 		ProxyAPICacheTTL:        getEnvDuration("PROXY_API_CACHE_TTL", 5*time.Minute),
 		ProxyWebCacheTTL:        getEnvDuration("PROXY_WEB_CACHE_TTL", time.Hour),
+		ProxyListWindowHours:    getEnvInt("PROXY_LIST_WINDOW_HOURS", 48),
+		ProxyStatsWindowHours:   getEnvInt("PROXY_STATS_WINDOW_HOURS", 168),
+		ProxyRetentionHours:     getEnvInt("PROXY_RETENTION_HOURS", 48),
 		APIKeys:                 getEnvList("API_KEYS", ""),
 		APIRateLimitHour:        getEnvInt("API_RATE_LIMIT_HOUR", 1000),
 		APIRateLimitWindow:      getEnvDuration("API_RATE_LIMIT_WINDOW", time.Hour),
@@ -190,6 +196,20 @@ func (c *Config) Validate() error {
 	}
 	if c.APIRateLimitWindow <= 0 {
 		c.APIRateLimitWindow = time.Hour
+	}
+	if c.ProxyListWindowHours <= 0 {
+		c.ProxyListWindowHours = 48
+	}
+	if c.ProxyStatsWindowHours <= 0 {
+		c.ProxyStatsWindowHours = 168
+	}
+	minRetention := c.ProxyListWindowHours
+	if c.ProxyStatsWindowHours > minRetention {
+		minRetention = c.ProxyStatsWindowHours
+	}
+	if c.ProxyRetentionHours < minRetention {
+		log.Printf("[CONFIG] PROXY_RETENTION_HOURS=%d too low; raising to %d to satisfy list/stats windows", c.ProxyRetentionHours, minRetention)
+		c.ProxyRetentionHours = minRetention
 	}
 
 	if c.SentryTracesSampleRate < 0 {

@@ -356,6 +356,15 @@ func (s *UnifiedStore) UpsertProxyListBatch(ctx context.Context, records []Proxy
 	}
 }
 
+func (s *UnifiedStore) DeleteStaleProxies(ctx context.Context, cutoff time.Time) (int, error) {
+	switch s.backend {
+	case BackendPostgres:
+		return s.postgres.DeleteStaleProxies(ctx, cutoff)
+	default:
+		return s.sqlite.DeleteStaleProxies(ctx, cutoff)
+	}
+}
+
 // ListProxyList forwards to the appropriate backend
 func (s *UnifiedStore) ListProxyList(ctx context.Context, filters ProxyListFilters) ([]ProxyListRecord, int, error) {
 	switch s.backend {

@@ -27,6 +27,13 @@ func (m *mockProxyListStore) UpsertProxyListBatch(ctx context.Context, records [
 	return len(records), nil
 }
 
+func (m *mockProxyListStore) DeleteStaleProxies(ctx context.Context, cutoff time.Time) (int, error) {
+	if m.upsertErr != nil {
+		return 0, m.upsertErr
+	}
+	return 0, nil
+}
+
 func (m *mockProxyListStore) ListProxyList(ctx context.Context, filters store.ProxyListFilters) ([]store.ProxyListRecord, int, error) {
 	return nil, 0, nil
 }

@@ -37,10 +37,24 @@ var (
 			Help: "Current number of in-flight HTTP requests.",
 		},
 	)
+	proxylistCacheHits = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "proxylist_cache_hits_total",
+			Help: "Total number of proxy list cache hits.",
+		},
+		[]string{"category", "scope"},
+	)
+	proxylistCacheMisses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "proxylist_cache_misses_total",
+			Help: "Total number of proxy list cache misses.",
+		},
+		[]string{"category", "scope"},
+	)
 )
 
 func init() {
-	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, httpInFlight)
+	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, httpInFlight, proxylistCacheHits, proxylistCacheMisses)
 }
 
 func MetricsHandler(cfg config.Config) gin.HandlerFunc {

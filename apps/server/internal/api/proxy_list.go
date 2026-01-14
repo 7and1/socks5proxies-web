@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -99,11 +100,16 @@ func (h *Handler) GetProxyStats(c *gin.Context) {
 		return
 	}
 
-	cacheKey := "proxylist:stats"
+	cacheKey := buildProxyStatsCacheKey(loadProxyCacheVersion(c, h.redis))
 	cacheTTL := time.Minute
 	setCacheHeaders(c, cacheTTL, true)
-	if h.redis != nil && cacheTTL > 0 {
+	cacheAttempted := h.redis != nil && cacheTTL > 0
+	if cacheAttempted {
 		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
+			proxylistCacheHits.WithLabelValues("stats", "web").Inc()
+			if shouldLogCache(h.cfg.LogLevel) {
+				log.Printf("[cache] proxylist stats hit key=%s", cacheKey)
+			}
 			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
 				meta["cached"] = true
 				meta["cache_age"] = h.getCacheAgeSeconds(c)
@@ -113,6 +119,10 @@ func (h *Handler) GetProxyStats(c *gin.Context) {
 			}
 			c.JSON(http.StatusOK, cachedPayload)
 			return
+		}
+		proxylistCacheMisses.WithLabelValues("stats", "web").Inc()
+		if shouldLogCache(h.cfg.LogLevel) {
+			log.Printf("[cache] proxylist stats miss key=%s", cacheKey)
 		}
 	}
 
@@ -151,11 +161,16 @@ func (h *Handler) ListRecentProxies(c *gin.Context) {
 	}
 
 	limit := parseLimit(c.Query("limit"), 10, 50)
-	cacheKey := fmt.Sprintf("proxylist:recent:%d", limit)
+	cacheKey := buildProxyRecentCacheKey(limit, loadProxyCacheVersion(c, h.redis))
 	cacheTTL := 30 * time.Second
 	setCacheHeaders(c, cacheTTL, true)
-	if h.redis != nil && cacheTTL > 0 {
+	cacheAttempted := h.redis != nil && cacheTTL > 0
+	if cacheAttempted {
 		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
+			proxylistCacheHits.WithLabelValues("recent", "web").Inc()
+			if shouldLogCache(h.cfg.LogLevel) {
+				log.Printf("[cache] proxylist recent hit key=%s", cacheKey)
+			}
 			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
 				meta["cached"] = true
 				meta["cache_age"] = h.getCacheAgeSeconds(c)
@@ -165,6 +180,10 @@ func (h *Handler) ListRecentProxies(c *gin.Context) {
 			}
 			c.JSON(http.StatusOK, cachedPayload)
 			return
+		}
+		proxylistCacheMisses.WithLabelValues("recent", "web").Inc()
+		if shouldLogCache(h.cfg.LogLevel) {
+			log.Printf("[cache] proxylist recent miss key=%s", cacheKey)
 		}
 	}
 
@@ -330,6 +349,60 @@ func (h *Handler) handleProxyList(c *gin.Context, authenticated bool) {
 		RespondError(c, http.StatusServiceUnavailable, "PROXYLIST_UNAVAILABLE", "proxy list not configured", nil)
 		return
 	}
+	filters := buildProxyListFilters(c, 25, 100)
+	if h.cfg.ProxyListWindowHours > 0 {
+		filters.Since = time.Now().UTC().Add(-time.Duration(h.cfg.ProxyListWindowHours) * time.Hour)
+	}
+
+	cacheKey := ""
+	cacheTTL := h.cfg.ProxyWebCacheTTL
+	if authenticated {
+		cacheTTL = h.cfg.ProxyAPICacheTTL
+	}
+	setCacheHeaders(c, cacheTTL, !authenticated)
+	if authenticated {
+		c.Header("Vary", "Authorization")
+	}
+	cacheScope := "web"
+	if authenticated {
+		cacheScope = "api"
+	}
+	cacheAttempted := h.redis != nil && cacheTTL > 0
+	if cacheAttempted {
+		cacheKey = buildProxyCacheKey(filters, authenticated, loadProxyCacheVersion(c, h.redis))
+		if cachedRaw, err := h.redis.Get(c, cacheKey).Result(); err == nil && cachedRaw != "" {
+			var cachedResponse struct {
+				Data []ProxyListItem `json:"data"`
+				Meta ProxyListMeta   `json:"meta"`
+			}
+			if err := json.Unmarshal([]byte(cachedRaw), &cachedResponse); err == nil {
+				proxylistCacheHits.WithLabelValues("list", cacheScope).Inc()
+				if shouldLogCache(h.cfg.LogLevel) {
+					log.Printf("[cache] proxylist list hit scope=%s key=%s", cacheScope, cacheKey)
+				}
+				cacheAge := h.getCacheAgeSeconds(c)
+				cachedResponse.Meta.Cached = true
+				cachedResponse.Meta.CacheAge = cacheAge
+				if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
+					cachedResponse.Meta.LastSync = lastSync.UTC().Format(time.RFC3339)
+				}
+
+				if etag := buildProxyListETag(cachedResponse.Data, cachedResponse.Meta); etag != "" {
+					if writeETagAndCheck(c, etag) {
+						return
+					}
+				}
+
+				c.JSON(http.StatusOK, cachedResponse)
+				return
+			}
+		}
+		proxylistCacheMisses.WithLabelValues("list", cacheScope).Inc()
+		if shouldLogCache(h.cfg.LogLevel) {
+			log.Printf("[cache] proxylist list miss scope=%s key=%s", cacheScope, cacheKey)
+		}
+	}
+
 	if !authenticated && h.limiter != nil {
 		allowed, count, err := h.limiter.Allow(c.Request.Context(), c.ClientIP())
 		if err != nil {
@@ -353,44 +426,6 @@ func (h *Handler) handleProxyList(c *gin.Context, authenticated bool) {
 				"requests_used": count,
 			})
 			return
-		}
-	}
-
-	filters := buildProxyListFilters(c, 25, 100)
-
-	cacheKey := ""
-	cacheTTL := h.cfg.ProxyWebCacheTTL
-	if authenticated {
-		cacheTTL = h.cfg.ProxyAPICacheTTL
-	}
-	setCacheHeaders(c, cacheTTL, !authenticated)
-	if authenticated {
-		c.Header("Vary", "Authorization")
-	}
-	if h.redis != nil && cacheTTL > 0 {
-		cacheKey = buildProxyCacheKey(filters, authenticated)
-		if cachedRaw, err := h.redis.Get(c, cacheKey).Result(); err == nil && cachedRaw != "" {
-			var cachedResponse struct {
-				Data []ProxyListItem `json:"data"`
-				Meta ProxyListMeta   `json:"meta"`
-			}
-			if err := json.Unmarshal([]byte(cachedRaw), &cachedResponse); err == nil {
-				cacheAge := h.getCacheAgeSeconds(c)
-				cachedResponse.Meta.Cached = true
-				cachedResponse.Meta.CacheAge = cacheAge
-				if lastSync := h.getLastSyncTimestamp(c); !lastSync.IsZero() {
-					cachedResponse.Meta.LastSync = lastSync.UTC().Format(time.RFC3339)
-				}
-
-				if etag := buildProxyListETag(cachedResponse.Data, cachedResponse.Meta); etag != "" {
-					if writeETagAndCheck(c, etag) {
-						return
-					}
-				}
-
-				c.JSON(http.StatusOK, cachedResponse)
-				return
-			}
 		}
 	}
 
@@ -497,9 +532,14 @@ func (h *Handler) listProxyFacets(c *gin.Context, facetType string) {
 	cacheKey := ""
 	cacheTTL := h.cfg.ProxyWebCacheTTL
 	setCacheHeaders(c, cacheTTL, true)
-	if h.redis != nil && cacheTTL > 0 {
-		cacheKey = "proxylist:facets:" + facetType + ":" + strconv.Itoa(limit) + ":" + strconv.Itoa(offset)
+	cacheAttempted := h.redis != nil && cacheTTL > 0
+	if cacheAttempted {
+		cacheKey = buildProxyFacetsCacheKey(facetType, limit, offset, loadProxyCacheVersion(c, h.redis))
 		if cachedPayload, ok := h.getCachedPayload(c, cacheKey); ok {
+			proxylistCacheHits.WithLabelValues("facets", "web").Inc()
+			if shouldLogCache(h.cfg.LogLevel) {
+				log.Printf("[cache] proxylist facets hit type=%s key=%s", facetType, cacheKey)
+			}
 			if meta, ok := cachedPayload["meta"].(map[string]any); ok {
 				meta["cached"] = true
 				meta["cache_age"] = h.getCacheAgeSeconds(c)
@@ -509,6 +549,10 @@ func (h *Handler) listProxyFacets(c *gin.Context, facetType string) {
 			}
 			c.JSON(http.StatusOK, cachedPayload)
 			return
+		}
+		proxylistCacheMisses.WithLabelValues("facets", "web").Inc()
+		if shouldLogCache(h.cfg.LogLevel) {
+			log.Printf("[cache] proxylist facets miss type=%s key=%s", facetType, cacheKey)
 		}
 	}
 
@@ -726,41 +770,74 @@ func parseASN(value string) int {
 	return parsed
 }
 
-func buildProxyCacheKey(filters store.ProxyListFilters, authenticated bool) string {
-	values := url.Values{}
-	if filters.CountryCode != "" {
-		values.Set("country", filters.CountryCode)
+func cacheKeyPart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
 	}
-	if filters.Protocol != "" {
-		values.Set("protocol", filters.Protocol)
-	}
-	if filters.Port > 0 {
-		values.Set("port", strconv.Itoa(filters.Port))
-	}
-	if filters.Anonymity != "" {
-		values.Set("anonymity", filters.Anonymity)
-	}
-	if filters.City != "" {
-		values.Set("city", filters.City)
-	}
-	if filters.Region != "" {
-		values.Set("region", filters.Region)
-	}
-	if filters.ASN > 0 {
-		values.Set("asn", strconv.Itoa(filters.ASN))
-	}
-	if filters.Limit > 0 {
-		values.Set("limit", strconv.Itoa(filters.Limit))
-	}
-	if filters.Offset > 0 {
-		values.Set("offset", strconv.Itoa(filters.Offset))
-	}
+	return url.PathEscape(value)
+}
 
-	prefix := "proxylist:web"
-	if authenticated {
-		prefix = "proxylist:api"
+func shouldLogCache(level string) bool {
+	return strings.EqualFold(strings.TrimSpace(level), "debug")
+}
+
+func cacheKeyInt(value int, allowZero bool) string {
+	if value == 0 && allowZero {
+		return "0"
 	}
-	return prefix + ":" + values.Encode()
+	if value <= 0 {
+		return "-"
+	}
+	return strconv.Itoa(value)
+}
+
+func buildProxyCacheKey(filters store.ProxyListFilters, authenticated bool, version string) string {
+	scope := "web"
+	if authenticated {
+		scope = "api"
+	}
+	if version == "" {
+		version = "0"
+	}
+	parts := []string{
+		"proxylist",
+		"v",
+		version,
+		"list",
+		scope,
+		cacheKeyPart(filters.CountryCode),
+		cacheKeyPart(filters.Protocol),
+		cacheKeyInt(filters.Port, false),
+		cacheKeyPart(filters.Anonymity),
+		cacheKeyPart(filters.City),
+		cacheKeyPart(filters.Region),
+		cacheKeyInt(filters.ASN, false),
+		cacheKeyInt(filters.Limit, true),
+		cacheKeyInt(filters.Offset, true),
+	}
+	return strings.Join(parts, ":")
+}
+
+func buildProxyFacetsCacheKey(facetType string, limit, offset int, version string) string {
+	if version == "" {
+		version = "0"
+	}
+	return fmt.Sprintf("proxylist:v:%s:facets:%s:%d:%d", version, facetType, limit, offset)
+}
+
+func buildProxyStatsCacheKey(version string) string {
+	if version == "" {
+		version = "0"
+	}
+	return fmt.Sprintf("proxylist:v:%s:stats", version)
+}
+
+func buildProxyRecentCacheKey(limit int, version string) string {
+	if version == "" {
+		version = "0"
+	}
+	return fmt.Sprintf("proxylist:v:%s:recent:%d", version, limit)
 }
 
 func transformProxyRecord(record store.ProxyListRecord) ProxyListItem {

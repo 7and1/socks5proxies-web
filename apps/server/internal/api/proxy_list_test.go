@@ -28,6 +28,13 @@ func (m *mockProxyListStore) UpsertProxyListBatch(ctx context.Context, records [
 	return 0, nil
 }
 
+func (m *mockProxyListStore) DeleteStaleProxies(ctx context.Context, cutoff time.Time) (int, error) {
+	if m.err != nil {
+		return 0, m.err
+	}
+	return 0, nil
+}
+
 func (m *mockProxyListStore) ListProxyList(ctx context.Context, filters store.ProxyListFilters) ([]store.ProxyListRecord, int, error) {
 	if m.err != nil {
 		return nil, 0, m.err
@@ -904,17 +911,20 @@ func TestBuildProxyCacheKey(t *testing.T) {
 		Limit:       25,
 	}
 
-	webKey := buildProxyCacheKey(filters, false)
+	version := "123"
+	webKey := buildProxyCacheKey(filters, false, version)
 	if webKey == "" {
 		t.Error("expected non-empty cache key")
 	}
-	if webKey[:12] != "proxylist:we" {
-		t.Errorf("expected web prefix, got %s", webKey[:12])
+	expectedWebPrefix := "proxylist:v:" + version + ":list:web:"
+	if !strings.HasPrefix(webKey, expectedWebPrefix) {
+		t.Errorf("expected web prefix %q, got %q", expectedWebPrefix, webKey)
 	}
 
-	apiKey := buildProxyCacheKey(filters, true)
-	if apiKey[:12] != "proxylist:ap" {
-		t.Errorf("expected api prefix, got %s", apiKey[:12])
+	apiKey := buildProxyCacheKey(filters, true, version)
+	expectedApiPrefix := "proxylist:v:" + version + ":list:api:"
+	if !strings.HasPrefix(apiKey, expectedApiPrefix) {
+		t.Errorf("expected api prefix %q, got %q", expectedApiPrefix, apiKey)
 	}
 
 	if webKey == apiKey {
