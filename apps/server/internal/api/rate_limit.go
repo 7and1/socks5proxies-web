@@ -58,10 +58,11 @@ func APIRateLimitMiddleware(cfg config.Config, limits APILimiters) gin.HandlerFu
 			return
 		}
 
-		subject := fmt.Sprintf("api:%s:%s", bucket, c.ClientIP())
+		ip := clientIP(c)
+		subject := fmt.Sprintf("api:%s:%s", bucket, ip)
 		allowed, count, err := limiter.Allow(c.Request.Context(), subject)
 		if err != nil {
-			log.Printf("[WARN] api rate limiter error for %s: %v", c.ClientIP(), err)
+			log.Printf("[WARN] api rate limiter error for %s: %v", ip, err)
 			RespondError(c, http.StatusServiceUnavailable, "RATE_LIMITER_ERROR", "rate limiter unavailable", nil)
 			return
 		}

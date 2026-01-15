@@ -61,6 +61,10 @@ func RespondError(c *gin.Context, statusCode int, code, message string, details 
 		Path:      c.Request.URL.Path,
 	}
 
+	// SECURITY: Prevent caching of error responses
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	c.JSON(statusCode, resp)
 }
 
@@ -153,10 +157,8 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		c.Header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		// SECURITY: Prevent MIME type sniffing
 		c.Header("X-Download-Options", "noopen")
-		// SECURITY: Prevent caching of API responses containing potentially sensitive data
+		// SECURITY: Default to no-store for endpoints that don't override cache policy.
 		c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
-		c.Header("Pragma", "no-cache")
-		c.Header("Expires", "0")
 		c.Next()
 	}
 }

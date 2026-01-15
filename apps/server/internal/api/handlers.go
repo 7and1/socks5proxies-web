@@ -161,7 +161,7 @@ func (h *Handler) checkRedis(ctx context.Context) HealthStatus {
 
 func (h *Handler) Whoami(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"ip":      c.ClientIP(),
+		"ip":      clientIP(c),
 		"headers": c.Request.Header,
 		"agent":   c.Request.UserAgent(),
 	})
@@ -169,10 +169,11 @@ func (h *Handler) Whoami(c *gin.Context) {
 
 func (h *Handler) ListProxies(c *gin.Context) {
 	if h.limiter != nil {
-		allowed, count, err := h.limiter.Allow(c.Request.Context(), c.ClientIP())
+		ip := clientIP(c)
+		allowed, count, err := h.limiter.Allow(c.Request.Context(), ip)
 		if err != nil {
 			// SECURITY: Log error internally but don't expose details
-			log.Printf("[ERROR] rate limiter error for %s: %v", c.ClientIP(), err)
+			log.Printf("[ERROR] rate limiter error for %s: %v", ip, err)
 			RespondError(c, http.StatusServiceUnavailable, "RATE_LIMITER_ERROR", "rate limiter unavailable", nil)
 			return
 		}

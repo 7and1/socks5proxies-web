@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:cloudflare": "npx @opennextjs/cloudflare build",
+    "build:cloudflare": "pnpm build && node -e \"require('fs').rmSync('.next/standalone/node_modules',{ recursive: true, force: true })\" && npx @opennextjs/cloudflare build --skipNextBuild",
     "preview": "wrangler dev",
-    "deploy": "wrangler pages deploy",
+    "deploy": "wrangler deploy --config ../../wrangler.toml",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run"

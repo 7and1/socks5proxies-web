@@ -41,6 +41,7 @@ apps/server/*.db-wal
 # Cloudflare
 .wrangler/
 .dev.vars
+wrangler.toml
 
 # Documentation (private)
 CLAUDE.md

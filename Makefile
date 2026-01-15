@@ -172,7 +172,7 @@ cf-dev:
 cf-deploy:
 	@echo "Deploying to Cloudflare..."
 	@echo "Ensure CLOUDFLARE_ACCOUNT_ID is set"
-	cd apps/web && pnpm deploy
+	wrangler deploy
 
 ## cf-deploy-root: Deploy from root wrangler.toml
 cf-deploy-root:

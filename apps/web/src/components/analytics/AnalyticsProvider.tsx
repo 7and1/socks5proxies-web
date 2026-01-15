@@ -18,6 +18,11 @@ import type {
   ToolSwitchEvent,
 } from "../../lib/analytics";
 
+const UMAMI_SRC =
+  process.env.NEXT_PUBLIC_UMAMI_SRC ||
+  "https://umami.expertbeacon.com/script.js";
+const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || "";
+
 interface AnalyticsContextValue {
   trackScanStarted: (data: ScanStartedEvent) => void;
   trackScanCompleted: (data: ScanCompletedEvent) => void;
@@ -138,10 +143,10 @@ function AnalyticsInner({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {mounted && analyticsEnabled && (
+      {mounted && analyticsEnabled && UMAMI_WEBSITE_ID && (
         <Script
-          src="https://umami.expertbeacon.com/script.js"
-          data-website-id="socks5proxies"
+          src={UMAMI_SRC}
+          data-website-id={UMAMI_WEBSITE_ID}
           strategy="afterInteractive"
         />
       )}

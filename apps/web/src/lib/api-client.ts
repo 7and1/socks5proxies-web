@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { env } from "./env";
 import type {
   ProxyResult,
@@ -263,6 +264,22 @@ export const apiClient = new ApiClient();
 
 const API_BASE = env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
 
+function getForwardHeaders(): HeadersInit | undefined {
+  if (typeof window !== "undefined") return undefined;
+  try {
+    const incoming = headers();
+    const cfConnectingIP = incoming.get("cf-connecting-ip");
+    const xForwardedFor = incoming.get("x-forwarded-for");
+    const forwardedIP =
+      cfConnectingIP ||
+      (xForwardedFor ? xForwardedFor.split(",")[0].trim() : "");
+    if (!forwardedIP) return undefined;
+    return { "CF-Connecting-IP": forwardedIP };
+  } catch {
+    return undefined;
+  }
+}
+
 // Helper to build cache key from params
 function buildCacheKey(
   prefix: string,
@@ -305,6 +322,7 @@ export async function getProxyList(params?: {
 
     const res = await fetch(`${API_BASE}/api/proxies?${searchParams}`, {
       cache: "no-store",
+      headers: getForwardHeaders(),
     });
     if (!res.ok) {
       throw new ApiError("Failed to load proxies", res.status);
@@ -322,6 +340,7 @@ export async function getProxyStats(): Promise<ProxyStatsResponse> {
   return requestCache.dedupe(cacheKey, async () => {
     const res = await fetch(`${API_BASE}/api/proxies/stats`, {
       cache: "no-store",
+      headers: getForwardHeaders(),
     });
     if (!res.ok) {
       throw new ApiError("Failed to load proxy stats", res.status);
@@ -344,6 +363,7 @@ export async function getRecentProxies(
     const suffix = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(`${API_BASE}/api/proxies/recent${suffix}`, {
       cache: "no-store",
+      headers: getForwardHeaders(),
     });
     if (!res.ok) {
       throw new ApiError("Failed to load recent proxies", res.status);
@@ -364,6 +384,7 @@ export async function getRandomProxies(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await fetch(`${API_BASE}/api/proxies/random${suffix}`, {
     cache: "no-store",
+    headers: getForwardHeaders(),
   });
   if (!res.ok) {
     throw new ApiError("Failed to load random proxies", res.status);
@@ -384,6 +405,7 @@ export async function getFacets(
     const suffix = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(`${API_BASE}/api/facets/${type}${suffix}`, {
       cache: "no-store",
+      headers: getForwardHeaders(),
     });
     if (!res.ok) {
       throw new ApiError("Failed to load facets", res.status);
@@ -409,6 +431,7 @@ export async function getFacetPage(
     const suffix = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(`${API_BASE}/api/facets/${type}${suffix}`, {
       cache: "no-store",
+      headers: getForwardHeaders(),
     });
     if (!res.ok) {
       throw new ApiError("Failed to load facets", res.status);
@@ -426,6 +449,7 @@ export async function getASNDetails(asn: number): Promise<ASNDetails | null> {
   return requestCache.dedupe(cacheKey, async () => {
     const res = await fetch(`${API_BASE}/api/asn/${asn}`, {
       cache: "no-store",
+      headers: getForwardHeaders(),
     });
     if (!res.ok) {
       throw new ApiError("Failed to load ASN details", res.status);

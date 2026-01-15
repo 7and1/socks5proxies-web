@@ -404,7 +404,7 @@ func (h *Handler) handleProxyList(c *gin.Context, authenticated bool) {
 	}
 
 	if !authenticated && h.limiter != nil {
-		allowed, count, err := h.limiter.Allow(c.Request.Context(), c.ClientIP())
+		allowed, count, err := h.limiter.Allow(c.Request.Context(), clientIP(c))
 		if err != nil {
 			RespondError(c, http.StatusServiceUnavailable, "RATE_LIMITER_ERROR", "rate limiter unavailable", nil)
 			return

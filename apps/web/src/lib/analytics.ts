@@ -48,9 +48,10 @@ export type ToolSwitchEvent = {
 };
 
 // Umami configuration
-const UMAMI_WEBSITE_ID =
-  process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || "socks5proxies";
-const UMAMI_SRC = "https://umami.expertbeacon.com/script.js";
+const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || "";
+const UMAMI_SRC =
+  process.env.NEXT_PUBLIC_UMAMI_SRC ||
+  "https://umami.expertbeacon.com/script.js";
 
 // Check if analytics is enabled (respects user preference)
 function isAnalyticsEnabled(): boolean {
@@ -127,6 +128,9 @@ export function getAnalyticsConsent(): boolean {
 
 // Get Umami script configuration
 export function getUmamiConfig(): { src: string; websiteId: string } | null {
+  if (!UMAMI_WEBSITE_ID) {
+    return null;
+  }
   if (typeof window !== "undefined" && !isAnalyticsEnabled()) {
     return null;
   }
