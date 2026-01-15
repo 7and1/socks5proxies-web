@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:cloudflare": "pnpm build && node -e \"require('fs').rmSync('.next/standalone/node_modules',{ recursive: true, force: true })\" && cp ../../wrangler.toml.example ./wrangler.toml && npx @opennextjs/cloudflare build --skipNextBuild && rm -f wrangler.toml",
+    "build:cloudflare": "pnpm build && node -e \"require('fs').rmSync('.next/standalone/node_modules',{ recursive: true, force: true })\" && cp ../../wrangler.toml.example ./wrangler.toml && npx @opennextjs/cloudflare build --skipNextBuild && node ../../scripts/patch-opennext.js && rm -f wrangler.toml",
     "preview": "wrangler dev",
     "deploy": "wrangler deploy --config ../../wrangler.toml",
     "start": "next start",
