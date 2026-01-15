@@ -3,7 +3,8 @@ import type { OpenNextConfig } from "@opennextjs/cloudflare";
 const config: OpenNextConfig = {
   default: {
     override: {
-      wrapper: "cloudflare-node",
+      // Use the edge wrapper to avoid Node-only modules (fs, etc.) in Workers.
+      wrapper: "cloudflare-edge",
       converter: "edge",
       proxyExternalRequest: "fetch",
       incrementalCache: "dummy",
