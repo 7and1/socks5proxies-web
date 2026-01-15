@@ -13,16 +13,20 @@ const handlerPath = path.join(
 );
 
 const content = fs.readFileSync(handlerPath, "utf8");
-const needle =
-  "getMiddlewareManifest(){return this.minimalMode?null:require(this.middlewareManifestPath)}";
 const replacement =
   "getMiddlewareManifest(){return this.minimalMode?null:_loadmanifest.loadManifest(this.middlewareManifestPath,!0)}";
 
-if (!content.includes(needle)) {
+if (content.includes(replacement)) {
+  process.exit(0);
+}
+
+const requirePattern = /require\\(this\\.middlewareManifestPath\\)/g;
+
+if (!requirePattern.test(content)) {
   throw new Error(
-    "OpenNext patch failed: getMiddlewareManifest() pattern not found in handler.mjs",
+    "OpenNext patch failed: require(this.middlewareManifestPath) not found in handler.mjs",
   );
 }
 
-const updated = content.replace(needle, replacement);
+const updated = content.replace(requirePattern, "_loadmanifest.loadManifest(this.middlewareManifestPath,!0)");
 fs.writeFileSync(handlerPath, updated);
