@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -77,13 +78,48 @@ func (h *Handler) WarmProxyCaches(ctx context.Context) {
 		}
 	}
 
+	// Main page cache (unfiltered proxy list)
+	cacheTTL := h.cfg.ProxyWebCacheTTL
+	if cacheTTL > 0 {
+		mainFilters := store.ProxyListFilters{
+			Limit:  warmPageLimit,
+			Offset: 0,
+		}
+		if h.cfg.ProxyListWindowHours > 0 {
+			mainFilters.Since = time.Now().UTC().Add(-time.Duration(h.cfg.ProxyListWindowHours) * time.Hour)
+		}
+		if records, total, err := h.proxyStore.ListProxyList(warmCtx, mainFilters); err == nil {
+			data := make([]ProxyListItem, 0, len(records))
+			for _, record := range records {
+				data = append(data, transformProxyRecord(record))
+			}
+			meta := ProxyListMeta{
+				Total:    total,
+				Limit:    mainFilters.Limit,
+				Offset:   mainFilters.Offset,
+				Cached:   true,
+				CacheAge: 0,
+			}
+			if !lastSync.IsZero() {
+				meta.LastSync = lastSync.Format(time.RFC3339)
+			}
+			payload := struct {
+				Data []ProxyListItem `json:"data"`
+				Meta ProxyListMeta   `json:"meta"`
+			}{
+				Data: data,
+				Meta: meta,
+			}
+			if raw, err := json.Marshal(payload); err == nil {
+				cacheKey := buildProxyCacheKey(mainFilters, false, version)
+				_ = h.redis.Set(warmCtx, cacheKey, raw, cacheTTL).Err()
+			}
+		}
+	}
+
 	// Top country pages (public web cache)
 	facets, err := h.proxyStore.ListProxyFacets(warmCtx, "country", warmCountryLimit, 0)
-	if err != nil {
-		return
-	}
-	cacheTTL := h.cfg.ProxyWebCacheTTL
-	if cacheTTL <= 0 {
+	if err != nil || cacheTTL <= 0 {
 		return
 	}
 
@@ -147,7 +183,7 @@ func (h *Handler) WarmCacheEndpoint(c *gin.Context) {
 }
 
 func loadLastSyncTimestamp(ctx context.Context, redisClient redisClient) time.Time {
-	if redisClient == nil {
+	if isNilRedisClient(redisClient) {
 		return time.Time{}
 	}
 	lastSync, err := redisClient.Get(ctx, "proxylist:last_sync").Result()
@@ -162,7 +198,7 @@ func loadLastSyncTimestamp(ctx context.Context, redisClient redisClient) time.Ti
 }
 
 func loadProxyCacheVersion(ctx context.Context, redisClient redisClient) string {
-	if redisClient == nil {
+	if isNilRedisClient(redisClient) {
 		return "0"
 	}
 	version, err := redisClient.Get(ctx, "proxylist:version").Result()
@@ -170,6 +206,14 @@ func loadProxyCacheVersion(ctx context.Context, redisClient redisClient) string 
 		return "0"
 	}
 	return version
+}
+
+func isNilRedisClient(redisClient redisClient) bool {
+	if redisClient == nil {
+		return true
+	}
+	value := reflect.ValueOf(redisClient)
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
 // redisClient is a narrow interface for testing / dependency isolation.
