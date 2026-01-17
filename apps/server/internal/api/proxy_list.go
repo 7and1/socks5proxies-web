@@ -558,12 +558,14 @@ func (h *Handler) listProxyFacets(c *gin.Context, facetType string) {
 
 	facets, err := h.proxyStore.ListProxyFacets(c.Request.Context(), facetType, limit, offset)
 	if err != nil {
+		log.Printf("[error] ListProxyFacets type=%s: %v", facetType, err)
 		RespondError(c, http.StatusInternalServerError, "DATABASE_ERROR", "failed to load facets", nil)
 		return
 	}
 
 	total, err := h.proxyStore.CountProxyFacets(c.Request.Context(), facetType)
 	if err != nil {
+		log.Printf("[error] CountProxyFacets type=%s: %v", facetType, err)
 		RespondError(c, http.StatusInternalServerError, "DATABASE_ERROR", "failed to load facets", nil)
 		return
 	}

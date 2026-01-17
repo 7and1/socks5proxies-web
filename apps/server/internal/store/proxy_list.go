@@ -3,11 +3,53 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// NullableJSON handles NULL and string JSON values from SQLite
+type NullableJSON json.RawMessage
+
+func (n *NullableJSON) Scan(value interface{}) error {
+	if value == nil {
+		*n = nil
+		return nil
+	}
+	switch v := value.(type) {
+	case []byte:
+		if len(v) == 0 {
+			*n = nil
+			return nil
+		}
+		*n = NullableJSON(v)
+	case string:
+		if v == "" {
+			*n = nil
+			return nil
+		}
+		*n = NullableJSON(v)
+	default:
+		return fmt.Errorf("unsupported type for NullableJSON: %T", value)
+	}
+	return nil
+}
+
+func (n NullableJSON) Value() (driver.Value, error) {
+	if n == nil {
+		return nil, nil
+	}
+	return []byte(n), nil
+}
+
+func (n NullableJSON) MarshalJSON() ([]byte, error) {
+	if n == nil {
+		return []byte("null"), nil
+	}
+	return json.RawMessage(n).MarshalJSON()
+}
 
 type ProxyListStore interface {
 	UpsertProxyListBatch(ctx context.Context, records []ProxyListRecord) (int, error)
@@ -63,12 +105,12 @@ type ProxyListRecord struct {
 }
 
 type FacetRecord struct {
-	Type      string          `db:"type" json:"type"`
-	Key       string          `db:"key" json:"key"`
-	Count     int             `db:"count" json:"count"`
-	AvgDelay  float64         `db:"avg_delay" json:"avg_delay"`
-	Metadata  json.RawMessage `db:"metadata" json:"metadata,omitempty"`
-	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
+	Type      string       `db:"type" json:"type"`
+	Key       string       `db:"key" json:"key"`
+	Count     int          `db:"count" json:"count"`
+	AvgDelay  float64      `db:"avg_delay" json:"avg_delay"`
+	Metadata  NullableJSON `db:"metadata" json:"metadata,omitempty"`
+	UpdatedAt time.Time    `db:"updated_at" json:"updated_at"`
 }
 
 type ASNDetails struct {
