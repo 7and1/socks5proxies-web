@@ -8,6 +8,7 @@ import FacetLinks from "./FacetLinks";
 import ProxyListInteractive from "./ProxyListInteractive";
 import { LiveUpdateBadge } from "../shared/LiveUpdateBadge";
 import { formatRelativeTime } from "../../lib/format";
+import { ProxyListErrorBoundary } from "./ProxyListErrorBoundary";
 
 interface ProxyListViewProps {
   title: string;
@@ -106,22 +107,17 @@ export async function ProxyListView({
   const fallbackFacets = await fetchFacets();
 
   return (
-    <div className="space-y-8">
-      <div className="rounded-3xl border border-red-200 bg-red-50/80 p-6 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
-        Proxy list data is temporarily unavailable. {errorMessage}
-      </div>
-      <ProxyListContent
-        title={title}
-        description={description}
-        basePath={basePath}
-        filters={filters}
-        lockCountry={lockCountry}
-        lockProtocol={lockProtocol}
-        lockPort={lockPort}
-        facets={fallbackFacets}
-        response={proxyResponse}
-      />
-    </div>
+    <ProxyListErrorBoundary
+      title={title}
+      description={description}
+      basePath={basePath}
+      filters={filters}
+      lockCountry={lockCountry}
+      lockProtocol={lockProtocol}
+      lockPort={lockPort}
+      facets={fallbackFacets}
+      initialError={errorMessage}
+    />
   );
 }
 
@@ -170,7 +166,7 @@ function ProxyListContentComponent({
     : "";
 
   return (
-    <section className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 2xl:max-w-[96rem]">
       <div className="rounded-3xl border border-sand-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-sand-700 dark:bg-sand-900/70">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
